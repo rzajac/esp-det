@@ -21,6 +21,7 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/esp_cmd/esp_cmd/includ
 include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/esp_cfg/esp_cfg/include)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/esp_eb/esp_eb/include)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/esp_json/esp_json/include)
+include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/esp_tim/esp_tim/include)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/uart/include)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/example/include)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/esp_det/include)
@@ -32,6 +33,7 @@ set(HEADER_FILES
         example/lib/esp_cfg/esp_cfg/include/esp_cfg.h
         example/lib/esp_eb/esp_eb/include/esp_eb.h
         example/lib/esp_json/esp_json/include/esp_json.h
+        example/lib/esp_tim/esp_tim/include/esp_tim.h
 
         example/lib/uart/include/uart.h
         example/lib/uart/include/uart_register.h
@@ -48,6 +50,7 @@ set(SOURCE_FILES
         example/lib/esp_cfg/esp_cfg/esp_cfg.c
         example/lib/esp_eb/esp_eb/esp_eb.c
         example/lib/esp_json/esp_json/esp_json.c
+        example/lib/esp_tim/esp_tim/esp_tim.c
 
         example/lib/uart/uart.c
         esp_det/esp_det.c

@@ -1,19 +1,14 @@
-<<<<<<< HEAD
 ## The ESP8266 detection library.
 
 The library helps detect and configure new ESP8266 devices on a network. 
-=======
-## Store user data on flash memory.
 
 The ESP8266 library for storing custom data structures on flash to keep it between resets / reboots.
 Depending on your configuration, linker script and data size you may have to customize 
 `ESP_CFG_START_SECTOR` in `esp_config.h` file. By default it is set 
 to sector `0xC` (one sector is 4096 bytes) which is located before user app (`0x10000`).  
->>>>>>> e03a574... Squashed 'example/lib/esp_cfg/' changes from 9489538..4425125
 
 The detection and configuration has following stages:
 
-<<<<<<< HEAD
 1. **Detect Me** - ESP creates password protected access point with name `IOT_XXXXXXXXXXXX` 
 (`XXXXXXXXXXXX` is the MAC address of the device) and starts TCP server listening on port 7802 for  
 commands. In this stage device waits to be detected by a **Manager Service** which should
@@ -75,9 +70,8 @@ Main Server configuration:
 
 The Main Server configuration is not validated in any way by the library. It simply stores it
 on the flash and provides it to the user program through API. 
-=======
+
 See (example)[example/main.c] program for usage.
->>>>>>> e03a574... Squashed 'example/lib/esp_cfg/' changes from 9489538..4425125
 
 ## Build and flash the example.
 
@@ -92,14 +86,13 @@ $ make flash
 $ miniterm.py /dev/ttyUSB0 74880
 ```
 
-<<<<<<< HEAD
 ## TODO
 
 - ~~Encrypt communication with AES.~~  
 - Send device type in Main Server detection broadcast.
 - Library sets internal callback using wifi_set_event_handler_cb. User program MUST not redefine it. If needed implement
 another callback so both library and user program can listen to wifi events.
-=======
+
 ## Integration.
 
 The best way to integrate this library is to use git subtree.
@@ -107,8 +100,8 @@ The best way to integrate this library is to use git subtree.
 To add source to your project use:
 
 ```text
-$ git remote add -f esp-cfg git@github.com:rzajac/esp-cfg.git
-$ git subtree add --prefix lib/esp_cfg esp-cfg master --squash
+$ git remote add -f esp-det git@github.com:rzajac/esp-det.git
+$ git subtree add --prefix lib/esp_det esp-det master --squash
 ```
 
 To pull updates.
@@ -116,7 +109,19 @@ To pull updates.
 ```text
 $ git subtree pull --prefix lib/esp_cfg esp-cfg master --squash
 ```
->>>>>>> e03a574... Squashed 'example/lib/esp_cfg/' changes from 9489538..4425125
+
+# Dependencies.
+
+This library depends on:
+
+- https://github.com/rzajac/esp-aes
+- https://github.com/rzajac/esp-cfg
+- https://github.com/rzajac/esp-cmd
+- https://github.com/rzajac/esp-eb
+- https://github.com/rzajac/esp-json
+- https://github.com/rzajac/esp-tim
+
+Also see [dep_add.sh](dep_add.sh) and [dep_update.sh](dep_update.sh) if you wish to add dependencies using git subtree.
 
 ## License.
 

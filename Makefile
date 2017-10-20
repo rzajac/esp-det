@@ -47,7 +47,7 @@ OBJCOPY = xtensa-lx106-elf-objcopy
 UNAME_S := $(shell uname -s)
 
 # Which modules (subdirectories) of the project to include in compiling.
-MODULES = include example/lib/esp_aes/esp_aes example/lib/esp_cmd/esp_cmd example/lib/esp_cfg/esp_cfg example/lib/esp_eb/esp_eb example/lib/esp_json/esp_json example/lib/uart esp_det example
+MODULES = include example/lib/esp_aes/esp_aes example/lib/esp_cmd/esp_cmd example/lib/esp_cfg/esp_cfg example/lib/esp_eb/esp_eb example/lib/esp_json/esp_json example/lib/esp_tim/esp_tim example/lib/uart esp_det example
 
 # The extra include directories. Absolute paths.
 EXTRA_INCDIR =
