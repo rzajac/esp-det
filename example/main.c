@@ -18,7 +18,7 @@
 
 #include <osapi.h>
 #include <user_interface.h>
-#include <uart.h>
+#include <esp_sdo.h>
 
 // The my_config0 magic number.
 #define MY_CFG_MAGIC_0 0xA3
@@ -37,7 +37,8 @@ struct STORE_ATTR {
   int cfg1;
 } my_config1;
 
-esp_cfg_err write_config(uint8_t cfg_num)
+esp_cfg_err ICACHE_FLASH_ATTR
+write_config(uint8_t cfg_num)
 {
   esp_cfg_err result = esp_cfg_write(cfg_num);
 
@@ -50,7 +51,8 @@ esp_cfg_err write_config(uint8_t cfg_num)
   return result;
 }
 
-void ICACHE_FLASH_ATTR sys_init_done(void)
+void ICACHE_FLASH_ATTR
+sys_init_done(void)
 {
   bool restart = false;
   esp_cfg_err init_err;
@@ -125,15 +127,13 @@ void ICACHE_FLASH_ATTR sys_init_done(void)
   os_printf("Press reset for next iteration...\n");
 }
 
-void ICACHE_FLASH_ATTR user_init()
+void ICACHE_FLASH_ATTR
+user_init()
 {
   // No need for wifi for this example.
   wifi_station_disconnect();
   wifi_set_opmode_current(NULL_MODE);
 
-  // Initialize UART.
-  uart_init(BIT_RATE_74880, BIT_RATE_74880);
-
-  // Set callback when system is done initializing.
+  stdout_init(BIT_RATE_74880);
   system_init_done_cb(sys_init_done);
 }

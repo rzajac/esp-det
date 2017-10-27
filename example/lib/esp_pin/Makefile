@@ -15,7 +15,7 @@ ESPTOOL = esptool.py
 BAUD ?= 3000000
 
 # The name for the target project.
-TARGET = esp_cfg
+TARGET = esp_pin
 
 # The linker script used for the above linkier step.
 LD_SCRIPT = eagle.app.v6.ld
@@ -25,9 +25,10 @@ LD_SCRIPT = eagle.app.v6.ld
 FW_1 = 0x00000
 FW_2 = 0x10000
 
-# Build flavor: release, debug.
-FLAVOR ?= release
-VERBOSITY ?= 2
+# Build flavor: 0 = release, 1 - debug.
+FLAVOR ?= 0
+# Turn on / off debugging messages.
+DEBUG_ON ?= 0
 
 # The path to USB to serial adapter.
 ESPPORT ?= /dev/ttyUSB0
@@ -46,13 +47,13 @@ OBJCOPY = xtensa-lx106-elf-objcopy
 UNAME_S := $(shell uname -s)
 
 # Which modules (subdirectories) of the project to include in compiling.
-MODULES = example/lib/esp_pin/esp_pin esp_cfg example
+MODULES = esp_pin example
 
 # The extra include directories. Absolute paths.
 EXTRA_INCDIR =
 
 # Libraries used in this project, mainly provided by the SDK.
-LIBS = c gcc phy pp net80211 wpa main lwip crypto ssl json driver
+LIBS = c gcc hal phy pp net80211 lwip wpa main ssl
 
 # Compiler flags using during compilation of source files.
 CFLAGS = -Os -Wpointer-arith -Wundef -Werror -Wl,-EL -fno-inline-functions -nostdlib -mlongcalls -mtext-section-literals  -D__ets__ -DICACHE_FLASH
@@ -60,12 +61,12 @@ CFLAGS = -Os -Wpointer-arith -Wundef -Werror -Wl,-EL -fno-inline-functions -nost
 # Linker flags used to generate the main object file.
 LDFLAGS = -nostdlib -Wl,--no-check-sections -u call_user_start -Wl,-static
 
-ifeq ($(FLAVOR),debug)
+ifeq ($(FLAVOR),1)
     CFLAGS += -O0
     LDFLAGS += -O0
 endif
 
-ifeq ($(FLAVOR),release)
+ifeq ($(FLAVOR),0)
     CFLAGS += -O2
     LDFLAGS += -O2
 endif
@@ -114,7 +115,7 @@ vpath %.c $(SRC_DIR)
 define compile-objects
 $1/%.o: %.c
 	$(vecho) "CC $$<"
-	$(Q) $(CC) $(INCDIR) $(MODULE_INCDIR) $(EXTRA_INCDIR) $(SDK_INCDIR) $(CFLAGS)  -c $$< -o $$@
+	$(Q) $(CC) $(INCDIR) $(MODULE_INCDIR) $(EXTRA_INCDIR) $(SDK_INCDIR) -DDEBUG_ON=$(DEBUG_ON) $(CFLAGS) -c $$< -o $$@
 endef
 
 .PHONY: all checkdirs clean
