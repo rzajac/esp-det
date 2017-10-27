@@ -8,6 +8,7 @@ git remote add -f esp-json git@github.com:rzajac/esp-json.git
 git remote add -f esp-cfg git@github.com:rzajac/esp-cfg.git
 git remote add -f esp-cmd git@github.com:rzajac/esp-cmd.git
 git remote add -f esp-aes git@github.com:rzajac/esp-aes.git
+git remote add -f esp-pin git@github.com:rzajac/esp-pin.git
 
 git subtree add --prefix example/lib/esp_tim esp-tim master --squash
 git subtree add --prefix example/lib/esp_eb esp-eb master --squash
@@ -15,5 +16,6 @@ git subtree add --prefix example/lib/esp_json esp-json master --squash
 git subtree add --prefix example/lib/esp_cfg esp-cfg master --squash
 git subtree add --prefix example/lib/esp_cmd esp-cmd master --squash
 git subtree add --prefix example/lib/esp_aes esp-aes master --squash
+git subtree add --prefix example/lib/esp_pin esp-pin master --squash
 
 echo "Done."

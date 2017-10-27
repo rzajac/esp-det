@@ -8,5 +8,6 @@ git subtree pull --prefix example/lib/esp_json esp-json master --squash
 git subtree pull --prefix example/lib/esp_cfg esp-cfg master --squash
 git subtree pull --prefix example/lib/esp_cmd esp-cmd master --squash
 git subtree pull --prefix example/lib/esp_aes esp-aes master --squash
+git subtree pull --prefix example/lib/esp_pin esp-pin master --squash
 
 echo "Done."
