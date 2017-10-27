@@ -1,4 +1,4 @@
-/*
+/**
  * Copyright 2017 Rafal Zajac <rzajac@gmail.com>.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -14,56 +14,43 @@
  * under the License.
  */
 
-#include <esp_tim.h>
 #include <user_interface.h>
 #include <osapi.h>
-#include <mem.h>
+#include <esp_gpio.h>
 #include <esp_sdo.h>
 
-typedef struct {
-  uint8_t val1;
-  int8_t val2;
-} my_data;
+static os_timer_t timer;
 
 void ICACHE_FLASH_ATTR
-my_cb(void *arg)
+blink(void *arg)
 {
-  esp_tim_timer *timer = arg;
-  my_data *data = timer->payload;
+  // If GPIO3 is low don't change GPIO2 state.
+  if (!GPIO_VALUE(GPIO3)) return;
 
-  os_printf("Callback val1: %d, val2: %d\n", data->val1, data->val2);
+  bool state = GPIO_VALUE(GPIO2);
 
-  if (data->val1 == 8) {
-    os_printf("END\n");
-    esp_tim_stop(timer);
-    return;
-  }
-
-  data->val1++;
-  data->val2--;
-  timer->delay *= 2;
-
-  esp_tim_continue(timer);
+  os_printf("LED state: %d\n", state);
+  state ? GPIO_OUT_LOW(GPIO2) : GPIO_OUT_HIGH(GPIO2);
 }
 
 void ICACHE_FLASH_ATTR
-sys_init_done(void)
+sys_init_done()
 {
-  my_data *data = os_zalloc(sizeof(my_data));
-  if (data == NULL) {
-    os_printf("No memory!\n");
-    return;
-  }
+  esp_gpio_setup(GPIO2, GPIO_MODE_OUTPUT);
+  esp_gpio_setup(GPIO3, GPIO_MODE_INPUT);
 
-  esp_tim_start(my_cb, data);
+  //Setup timer to call our callback in 1 second intervals.
+  os_timer_disarm(&timer);
+  os_timer_setfn(&timer, (os_timer_func_t *) blink, 0);
+  os_timer_arm(&timer, 1000, true);
 }
 
 void ICACHE_FLASH_ATTR
 user_init()
 {
-  // No need for wifi for this example.
+  // We don't need WiFi for this example.
   wifi_station_disconnect();
-  wifi_set_opmode_current(NULL_MODE);
+  wifi_set_opmode(NULL_MODE);
 
   stdout_init(BIT_RATE_74880);
   system_init_done_cb(sys_init_done);
