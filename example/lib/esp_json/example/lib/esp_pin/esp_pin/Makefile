@@ -12,7 +12,7 @@
 #     a generated lib/image xxx.a ()
 #
 ifndef PDIR
-GEN_LIBS = libuart.a
+GEN_LIBS = libesppin.a
 endif
 
 

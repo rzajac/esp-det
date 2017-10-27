@@ -15,10 +15,10 @@
  */
 
 #include <user_interface.h>
-#include <uart.h>
 #include <osapi.h>
 #include <esp_json.h>
 #include <mem.h>
+#include <esp_sdo.h>
 
 #define EXAMPLE_JSON "{\"cmd\": \"test\", \"code\": 23, \"fast\": true}"
 
@@ -63,9 +63,6 @@ void ICACHE_FLASH_ATTR user_init()
   wifi_station_disconnect();
   wifi_set_opmode_current(NULL_MODE);
 
-  // Initialize UART.
-  uart_init(BIT_RATE_74880, BIT_RATE_74880);
-
-  // Set callback when system is done initializing.
+  stdout_init(BIT_RATE_74880);
   system_init_done_cb(sys_init_done);
 }
