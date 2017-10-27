@@ -20,6 +20,7 @@ By default Makefile:
 ```
 $ make
 $ make flash
+$ miniterm.py /dev/ttyUSB0 74880
 ```
 
 ## Integration.
