@@ -1,6 +1,7 @@
 ## ESP8266 library making JSON manipulation easier.
 
-This repository is adoption of https://github.com/DaveGamble/cJSON for ESP8266. Requires SDK 2.1.0.
+This repository is adoption of https://github.com/DaveGamble/cJSON for ESP8266. 
+Requires SDK 2.1.0.
 
 ## Build and flash the example.
 
@@ -12,6 +13,7 @@ By default Makefile:
 ```
 $ make
 $ make flash
+$ miniterm.py /dev/ttyUSB0 74880
 ```
 
 ## Usage.
