@@ -15,8 +15,8 @@
  */
 
 #include <esp_det.h>
-#include <uart.h>
 #include <esp_aes.h>
+#include <esp_sdo.h>
 
 // AES encryption configuration.
 #define AES_KEY_INIT { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c }
@@ -87,7 +87,7 @@ void ICACHE_FLASH_ATTR
 user_init()
 {
   // Initialize UART.
-  uart_init(BIT_RATE_74880, BIT_RATE_74880);
+  stdout_init(BIT_RATE_74880);
 
   // Set callback when system is done initializing.
   system_init_done_cb(sys_init_done);
