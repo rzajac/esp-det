@@ -15,7 +15,7 @@
  */
 
 #include <esp_eb.h>
-#include <uart.h>
+#include <esp_sdo.h>
 #include <user_interface.h>
 
 
@@ -100,9 +100,6 @@ user_init()
   wifi_station_disconnect();
   wifi_set_opmode_current(NULL_MODE);
 
-  // Initialize UART.
-  uart_init(BIT_RATE_74880, BIT_RATE_74880);
-
-  // Set callback when system is done initializing.
+  stdout_init(BIT_RATE_74880);
   system_init_done_cb(sys_init_done);
 }

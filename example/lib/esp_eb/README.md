@@ -72,6 +72,14 @@ To pull updates.
 $ git subtree pull --prefix lib/esp_eb esp-eb master --squash
 ```
 
+# Dependencies.
+
+This library depends on:
+
+- https://github.com/rzajac/esp-tim
+
+Also see [dep_add.sh](dep_add.sh) and [dep_update.sh](dep_update.sh) if you wish to add dependencies using git subtree.
+
 ## License.
 
 [Apache License Version 2.0](LICENSE) unless stated otherwise.
