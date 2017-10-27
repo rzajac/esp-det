@@ -15,7 +15,7 @@ ESPTOOL = esptool.py
 BAUD ?= 3000000
 
 # The name for the target project.
-TARGET = esp_cmd
+TARGET = esp_pin
 
 # The linker script used for the above linkier step.
 LD_SCRIPT = eagle.app.v6.ld
@@ -47,7 +47,7 @@ OBJCOPY = xtensa-lx106-elf-objcopy
 UNAME_S := $(shell uname -s)
 
 # Which modules (subdirectories) of the project to include in compiling.
-MODULES = example/lib/esp_pin/esp_pin esp_cmd example
+MODULES = esp_pin example
 
 # The extra include directories. Absolute paths.
 EXTRA_INCDIR =
@@ -115,7 +115,7 @@ vpath %.c $(SRC_DIR)
 define compile-objects
 $1/%.o: %.c
 	$(vecho) "CC $$<"
-	$(Q) $(CC) $(INCDIR) $(MODULE_INCDIR) $(EXTRA_INCDIR) -DDEBUG_ON=$(DEBUG_ON) $(SDK_INCDIR) $(CFLAGS)  -c $$< -o $$@
+	$(Q) $(CC) $(INCDIR) $(MODULE_INCDIR) $(EXTRA_INCDIR) $(SDK_INCDIR) -DDEBUG_ON=$(DEBUG_ON) $(CFLAGS) -c $$< -o $$@
 endef
 
 .PHONY: all checkdirs clean

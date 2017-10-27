@@ -16,9 +16,9 @@
 
 #include <esp_cmd.h>
 
-#include <uart.h>
 #include <user_interface.h>
 #include <wifi.h>
+#include <esp_sdo.h>
 
 uint8_t cmd_count;
 
@@ -59,8 +59,7 @@ sys_init_done(void)
 void ICACHE_FLASH_ATTR
 user_init()
 {
-  // Initialize UART.
-  uart_init(BIT_RATE_74880, BIT_RATE_74880);
+  stdout_init(BIT_RATE_74880);
 
   // Set callback when system is done initializing.
   system_init_done_cb(sys_init_done);
