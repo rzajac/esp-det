@@ -73,16 +73,18 @@ on the flash and provides it to the user program through API.
 
 See (example)[example/main.c] program for usage.
 
-## Build and flash the example.
+## Build environment.
 
-By default Makefile:
-- looks for esp-open-sdk in `$HOME/lib/esp-open-sdk/sdk`
-- uses `/dev/ttyUSB0` for USB to serial communication
-- assumes `esptool.py` exists in user `$PATH`
+This library is part of my build system for ESP8266 based on CMake.
+To compile / flash examples you will have to have the ESP development 
+environment setup as described at https://github.com/rzajac/esp-dev-env.
+
+## Flash example.
 
 ```
-$ make
-$ make flash
+$ cd build
+$ cmake ..
+$ make esp_det_example_flash
 $ miniterm.py /dev/ttyUSB0 74880
 ```
 
@@ -95,33 +97,32 @@ another callback so both library and user program can listen to wifi events.
 
 ## Integration.
 
-The best way to integrate this library is to use git subtree.
+If you're using my build environment you can install this library by issuing:
 
-To add source to your project use:
-
-```text
-$ git remote add -f esp-det git@github.com:rzajac/esp-det.git
-$ git subtree add --prefix lib/esp_det esp-det master --squash
+```
+$ wget -O - https://raw.githubusercontent.com/rzajac/esp-det/master/install.sh | bash
 ```
 
-To pull updates.
+or if you already cloned this repository you can do:
 
-```text
-$ git subtree pull --prefix lib/esp_cfg esp-cfg master --squash
 ```
+$ cd build
+$ cmake ..
+$ make
+$ make install
+```
+
+which will install the library, headers and scripts in appropriate places 
+in `$ESPROOT`.
 
 # Dependencies.
 
 This library depends on:
 
-- https://github.com/rzajac/esp-aes
-- https://github.com/rzajac/esp-cfg
-- https://github.com/rzajac/esp-cmd
 - https://github.com/rzajac/esp-eb
+- https://github.com/rzajac/esp-cmd
+- https://github.com/rzajac/esp-cfg
 - https://github.com/rzajac/esp-json
-- https://github.com/rzajac/esp-tim
-
-Also see [dep_add.sh](dep_add.sh) and [dep_update.sh](dep_update.sh) if you wish to add dependencies using git subtree.
 
 ## License.
 

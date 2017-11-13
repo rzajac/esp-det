@@ -1,6 +1,0 @@
-build/
-cmake-build-*/
-example/include/user_config.h
-firmware/
-.idea/
-

@@ -1,58 +1,38 @@
-# This is not complete file. It has bare minimum to use this project with CLion.
+# Copyright 2017 Rafal Zajac <rzajac@gmail.com>.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
 
-cmake_minimum_required(VERSION 3.8)
-project(esp_det)
 
+# Bootstrap before call to project().
+include("$ENV{ESPROOT}/esp-cmake/ESP8266.bootstrap.cmake")
+cmake_minimum_required(VERSION 3.5)
+
+project(esp_det C)
 set(CMAKE_C_STANDARD 99)
-set(CMAKE_CXX_STANDARD 11)
 
-SET(CMAKE_C_COMPILER "$ENV{HOME}/lib/esp-open-sdk/xtensa-lx106-elf/bin/xtensa-lx106-elf-gcc")
-SET(CMAKE_CXX_COMPILER "$ENV{HOME}/lib/esp-open-sdk/xtensa-lx106-elf/bin/xtensa-lx106-elf-g++")
+# The directory containing global user_congih.h header file.
+set(ESP_USER_CONFIG_DIR "${CMAKE_CURRENT_LIST_DIR}/example/include")
+set(ESP_USER_CONFIG "${ESP_USER_CONFIG_DIR}/user_config.h")
+set(ESP_CMAKE_FIND_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake")
+set(ESP_LIB_BIN_DIR "${CMAKE_CURRENT_LIST_DIR}/bin")
 
-if(NOT DEFINED ENV{ESP_OPEN_SDK})
-    message("Seting ESP_OPEN_SDK to $ENV{HOME}/lib/esp-open-sdk")
-    set(ENV{ESP_OPEN_SDK} "$ENV{HOME}/lib/esp-open-sdk")
-endif()
+# Magic.
+include("${ESP_CMAKE_DIR}/ESP8266.cmake")
 
-message("Open SDK at $ENV{ESP_OPEN_SDK}")
+# Main application.
+# Must define esp_main executable target.
+add_subdirectory(src)
+add_subdirectory(example)
 
-include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/esp_aes/esp_aes/include)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/esp_cmd/esp_cmd/include)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/esp_cfg/esp_cfg/include)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/esp_eb/esp_eb/include)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/esp_json/esp_json/include)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/esp_tim/esp_tim/include)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/esp_pin/esp_pin/include)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/example/lib/uart/include)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/example/include)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/esp_det/include)
-include_directories($ENV{ESP_OPEN_SDK}/sdk/include)
-
-set(HEADER_FILES
-        example/lib/esp_aes/esp_aes/include/esp_aes.h
-        example/lib/esp_cmd/esp_cmd/include/esp_cmd.h
-        example/lib/esp_cfg/esp_cfg/include/esp_cfg.h
-        example/lib/esp_eb/esp_eb/include/esp_eb.h
-        example/lib/esp_json/esp_json/include/esp_json.h
-        example/lib/esp_tim/esp_tim/include/esp_tim.h
-        example/lib/esp_pin/esp_pin/include/esp_sdo.h
-
-        example/include/user_config.h
-        esp_det/include/esp_det.h
-)
-
-set(SOURCE_FILES
-        example/main.c
-
-        example/lib/esp_aes/esp_aes/esp_aes.c
-        example/lib/esp_cmd/esp_cmd/esp_cmd.c
-        example/lib/esp_cfg/esp_cfg/esp_cfg.c
-        example/lib/esp_eb/esp_eb/esp_eb.c
-        example/lib/esp_json/esp_json/esp_json.c
-        example/lib/esp_tim/esp_tim/esp_tim.c
-        example/lib/esp_pin/esp_pin/esp_sdo.c
-
-        esp_det/esp_det.c
-)
-
-add_library(${PROJECT_NAME} ${SOURCE_FILES} ${HEADER_FILES})
+set(CPACK_GENERATOR "TGZ")
+include(CPack)
