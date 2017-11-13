@@ -21,7 +21,6 @@
 #include <esp_json.h>
 #include <mem.h>
 
-
 // Event names.
 #define ESP_DET_EV_MAIN "espDetMain"
 #define ESP_DET_EV_GOT_IP "espDetGotIp"

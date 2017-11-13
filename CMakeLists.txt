@@ -23,7 +23,6 @@ set(CMAKE_C_STANDARD 99)
 # The directory containing global user_congih.h header file.
 set(ESP_USER_CONFIG_DIR "${CMAKE_CURRENT_LIST_DIR}/example/include")
 set(ESP_USER_CONFIG "${ESP_USER_CONFIG_DIR}/user_config.h")
-set(ESP_CMAKE_FIND_DIR "${CMAKE_CURRENT_LIST_DIR}/cmake")
 set(ESP_LIB_BIN_DIR "${CMAKE_CURRENT_LIST_DIR}/bin")
 
 # Magic.

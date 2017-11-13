@@ -84,7 +84,7 @@ environment setup as described at https://github.com/rzajac/esp-dev-env.
 ```
 $ cd build
 $ cmake ..
-$ make esp_det_example_flash
+$ make esp_det_ex_flash
 $ miniterm.py /dev/ttyUSB0 74880
 ```
 
@@ -119,9 +119,15 @@ in `$ESPROOT`.
 
 This library depends on:
 
-- https://github.com/rzajac/esp-eb
+- https://github.com/rzajac/esp-ecl
 - https://github.com/rzajac/esp-cmd
-- https://github.com/rzajac/esp-scl
+
+to install dependencies run:
+
+```
+$ wget -O - https://raw.githubusercontent.com/rzajac/esp-ecl/master/install.sh | bash
+$ wget -O - https://raw.githubusercontent.com/rzajac/esp-cmd/master/install.sh | bash
+```
 
 ## License.
 

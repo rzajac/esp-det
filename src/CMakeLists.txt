@@ -33,9 +33,10 @@ target_include_directories(esp_det PUBLIC
     ${esp_json_INCLUDE_DIRS}
     ${ESP_USER_CONFIG_DIR})
 
-esp_gen_lib(esp_det
+target_link_libraries(esp_det
     ${esp_eb_LIBRARIES}
     ${esp_cmd_LIBRARIES}
     ${esp_cfg_LIBRARIES}
-    ${esp_json_LIBRARIES}
-    ${ESP_CMAKE_FIND_DIR})
+    ${esp_json_LIBRARIES})
+
+esp_gen_lib(esp_det)

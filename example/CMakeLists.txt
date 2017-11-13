@@ -13,9 +13,6 @@
 # under the License.
 
 
-# The example doesn't use cmake find_package(esp_det) function because we want
-# local library not the one installed in $ESPROOT.
-
 find_package(esp_sdo REQUIRED)
 find_package(esp_aes REQUIRED)
 
@@ -24,11 +21,11 @@ find_package(esp_cmd REQUIRED)
 find_package(esp_cfg REQUIRED)
 find_package(esp_json REQUIRED)
 
-add_executable(esp_det_example
+add_executable(esp_det_ex
     main.c
     ${ESP_USER_CONFIG})
 
-target_include_directories(esp_det_example PUBLIC
+target_include_directories(esp_det_ex PUBLIC
     ${esp_sdo_INCLUDE_DIRS}
     ${esp_aes_INCLUDE_DIRS}
     ${esp_eb_INCLUDE_DIRS}
@@ -37,13 +34,9 @@ target_include_directories(esp_det_example PUBLIC
     ${esp_json_INCLUDE_DIRS}
     ${ESP_USER_CONFIG_DIR})
 
-target_link_libraries(esp_det_example
+target_link_libraries(esp_det_ex
     ${esp_sdo_LIBRARIES}
     ${esp_aes_LIBRARIES}
-    ${esp_eb_LIBRARIES}
-    ${esp_cmd_LIBRARIES}
-    ${esp_cfg_LIBRARIES}
-    ${esp_json_LIBRARIES}
     esp_det)
 
-esp_gen_exec_targets(esp_det_example)
+esp_gen_exec_targets(esp_det_ex)
