@@ -121,8 +121,7 @@ This library depends on:
 
 - https://github.com/rzajac/esp-eb
 - https://github.com/rzajac/esp-cmd
-- https://github.com/rzajac/esp-cfg
-- https://github.com/rzajac/esp-json
+- https://github.com/rzajac/esp-scl
 
 ## License.
 
