@@ -12,6 +12,11 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+# Make sure ESPROOT environemt varaiabnle is set.
+if (NOT EXISTS $ENV{ESPROOT})
+    message("The ESPROOT environment varaible is not set. Using ${HOME}/esproot.")
+    set(ENV{ESPROOT} "${HOME}/esproot")
+endif()
 
 # Bootstrap before call to project().
 include("$ENV{ESPROOT}/esp-cmake/ESP8266.bootstrap.cmake")
