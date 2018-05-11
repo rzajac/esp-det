@@ -14,8 +14,8 @@
 
 # Make sure ESPROOT environemt varaiabnle is set.
 if (NOT EXISTS $ENV{ESPROOT})
-    message("The ESPROOT environment varaible is not set. Using ${HOME}/esproot.")
-    set(ENV{ESPROOT} "${HOME}/esproot")
+    message("The ESPROOT environment varaible is not set. Using $ENV{HOME}/esproot.")
+    set(ENV{ESPROOT} "$ENV{HOME}/esproot")
 endif()
 
 # Bootstrap before call to project().
