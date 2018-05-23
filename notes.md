@@ -19,3 +19,7 @@ network={
      psk="password"
 }
 ```
+
+```
+esptool.py -p /dev/ttyUSB0 -b 74880 write_flash 0x3fc000 esp_init_data_default.bin
+```
