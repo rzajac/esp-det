@@ -156,6 +156,7 @@ create_ap()
   // Build access point name.
   wifi_get_macaddr(STATION_IF, mac_address);
   os_memset(ap_name, 0, ESP_DET_AP_NAME_MAX);
+  // TODO: this needs to be configurable.
   os_sprintf(ap_name, "IOT_%02X%02X%02X%02X%02X%02X", MAC2STR(mac_address));
 
   ESP_DET_DEBUG("Creating access point %s / %s\n", ap_name, g_sta->ap_pass);
