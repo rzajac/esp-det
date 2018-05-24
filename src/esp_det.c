@@ -21,16 +21,17 @@
 #include <esp_json.h>
 #include <mem.h>
 
-// Event names.
+// Trigger user callback event name.
 #define ESP_DET_EV_MAIN "espDetMain"
+// Received IP from access point event name.
 #define ESP_DET_EV_GOT_IP "espDetGotIp"
+// Access point disconnection event name.
 #define ESP_DET_EV_DISC "espDetDisc"
+// User callback event name.
 #define ESP_DET_EV_USER "espDetUser"
-#define ESP_DET_EV_DISC_SRV "espDetDiscSrv"
 
 // Supported commands.
-#define ESP_DET_CMD_SET_AP "setAp"
-#define ESP_DET_CMD_SET_SRV "setSrv"
+#define ESP_DET_CMD_SET_AP "cfg"
 #define ESP_DET_CMD_DISCOVERY "iotDiscovery"
 
 #define ESP_DET_FAST_CALL 10
@@ -40,26 +41,24 @@
 typedef enum {
   ESP_DET_ST_DM = 1, // Creates AP and waits for detection and configuration.
   ESP_DET_ST_CN,     // Connecting to access point.
-  ESP_DET_ST_DS,     // Send broadcasts and wait for main server configuration.
   ESP_DET_ST_OP      // All needed configuration is present. Relinquish control to user program.
 } esp_det_st;
 
 // The ESP detection flash stored configuration.
 typedef struct STORE_ATTR {
-  uint8_t magic;     // The magic number indicating the config version. Used to validate loaded data.
-  uint32_t load_cnt; // The number of times config was loaded from flash.
-  uint32_t srv_ip;   // The main server IP.
-  uint16_t srv_port; // The main server port.
-  esp_det_st stage;  // The current detection stage.
-  char srv_user[ESP_DET_SRV_USER_MAX]; // The main server username.
-  char srv_pass[ESP_DET_SRV_PASS_MAX]; // The main server password.
+  uint8_t magic;      // The magic number indicating the config version. Used to validate loaded data.
+  uint32_t load_cnt;  // The number of times config was loaded from flash.
+  uint32_t mqtt_ip;   // The MQTT broker IP.
+  uint16_t mqtt_port; // The MQTT broker port.
+  esp_det_st stage;   // The current detection stage.
+  char mqtt_user[ESP_DET_MQTT_USER_MAX]; // The MQTT broker username.
+  char mqtt_pass[ESP_DET_MQTT_PASS_MAX]; // The MQTT broker password.
   char ap_name[ESP_DET_AP_NAME_MAX];   // The access name.
   char ap_pass[ESP_DET_AP_PASS_MAX];   // The access point password.
 } flash_cfg;
 
 // The ESP detection global state.
 typedef struct {
-  bool det_srv;       // Set to true to detect main server.
   bool connected;     // Set to true if we are connected to access point.
   bool dm_run;        // Was detect me stage running.
   char *ap_pass;      // The password for access point created in ESP_DET_ST_DM.
@@ -73,8 +72,8 @@ typedef struct {
   esp_det_disconnect *disc_cb; // The wifi disconnection callback.
   esp_det_enc_dec *encrypt_cb; // Encryption callback.
   esp_det_enc_dec *decrypt_cb; // Decryption callback.
-  os_timer_t *ip_to;             // The maximum time for acquiring IP.
-  struct espconn udp_conn;       // The UDP broadcast connection.
+  os_timer_t *ip_to;           // The maximum time for acquiring IP.
+  struct espconn udp_conn;     // The UDP broadcast connection.
 } det_state;
 
 // The configuration loaded from flash.
@@ -92,8 +91,6 @@ static esp_cfg_err ICACHE_FLASH_ATTR load_config();
 static esp_cfg_err ICACHE_FLASH_ATTR cfg_reset();
 
 static esp_cfg_err ICACHE_FLASH_ATTR cfg_set_stage(esp_det_st stage);
-
-static bool ICACHE_FLASH_ATTR udp_send_dis_packet(uint32 ip, uint32 port);
 
 static unsigned short ICACHE_FLASH_ATTR cmd_handle_cb(uint8_t *res,
                                                       uint16 res_len,
@@ -116,6 +113,13 @@ call_user_e_cb(const char *event, void *arg)
   g_sta->done_cb((esp_det_err) ((uint32_t) arg));
 }
 
+/**
+ * Returns true if access point configuration is the same.
+ *
+ * @param c1 The access point config.
+ * @param c2 The access point config.
+ * @return True if configs are equal.
+ */
 static bool ICACHE_FLASH_ATTR
 ap_config_equal(struct softap_config *c1, struct softap_config *c2) {
   if (os_strncmp((const char *) c1->ssid, (const char *) c2->ssid, 32) != 0) {
@@ -249,10 +253,10 @@ cfg_set_ap(char *ap_name, char *ap_pass)
 static esp_cfg_err ICACHE_FLASH_ATTR
 cfg_set_srv(uint32_t ip, uint16_t port, char *user, char *pass)
 {
-  g_cfg->srv_ip = ip;
-  g_cfg->srv_port = port;
-  strlcpy(g_cfg->srv_user, user, ESP_DET_SRV_USER_MAX);
-  strlcpy(g_cfg->srv_pass, pass, ESP_DET_SRV_PASS_MAX);
+  g_cfg->mqtt_ip = ip;
+  g_cfg->mqtt_port = port;
+  strlcpy(g_cfg->mqtt_user, user, ESP_DET_MQTT_USER_MAX);
+  strlcpy(g_cfg->mqtt_pass, pass, ESP_DET_MQTT_PASS_MAX);
 
   return esp_cfg_write(ESP_DET_CFG_IDX);
 }
@@ -272,6 +276,7 @@ trigger_main(bool reset_cfg, uint32_t delay)
   esp_eb_trigger_delayed(ESP_DET_EV_MAIN, delay, NULL);
 }
 
+/** Stop get IP time out timer. */
 void ICACHE_FLASH_ATTR
 stop_ip_to()
 {
@@ -294,7 +299,7 @@ get_ip_to_cb()
 }
 
 /**
- * Got IP address callback.
+ * Got IP address after connection go access point callback.
  *
  * @param event The event name.
  * @param arg   The event argument.
@@ -308,12 +313,7 @@ got_ip_e_cb(const char *event, void *arg)
   g_sta->connected = true;
 
   if (g_sta->stage == ESP_DET_ST_CN) {
-    if (g_sta->det_srv && g_cfg->srv_ip == 0) {
-      cfg_set_stage(ESP_DET_ST_DS);
-    } else {
-      cfg_set_stage(ESP_DET_ST_OP);
-    }
-
+    cfg_set_stage(ESP_DET_ST_OP);
     trigger_main(false, ESP_DET_FAST_CALL);
     return;
   }
@@ -344,24 +344,6 @@ disc_e_cb(const char *event, void *arg)
   if (g_sta->disc_cb && g_sta->stage == ESP_DET_ST_OP) g_sta->disc_cb();
   cfg_set_stage(ESP_DET_ST_CN);
   trigger_main(false, ESP_DET_FAST_CALL);
-}
-
-static void ICACHE_FLASH_ATTR
-send_udp_br_e_cb(const char *event, void *arg)
-{
-  if (g_sta->connected == false) return;
-  if (g_cfg->srv_ip != 0 && g_cfg->srv_port != 0) return;
-
-  g_sta->sr_err_cnt += 1;
-  if (g_sta->sr_err_cnt >= 10) {
-    cfg_reset();
-    trigger_main(true, ESP_DET_SLOW_CALL);
-    return;
-  }
-
-  bool success = udp_send_dis_packet(g_sta->brd_addr, ESP_DET_CMD_PORT);
-  if (success) ESP_DET_DEBUG("Broadcast #%d sent.\n", g_sta->sr_err_cnt);
-  esp_eb_trigger_delayed(ESP_DET_EV_DISC_SRV, 1000, NULL);
 }
 
 /** Go into detect me stage */
@@ -432,17 +414,6 @@ stage_connect()
   }
 }
 
-/** Go into detect main server stage. */
-static void ICACHE_FLASH_ATTR
-stage_detect_srv()
-{
-  ESP_DET_DEBUG("Running stage_detect_srv in stage %d.\n", g_sta->stage);
-
-  if (g_sta->stage == ESP_DET_ST_DS) {
-    esp_eb_trigger(ESP_DET_EV_DISC_SRV, NULL);
-  }
-}
-
 /** Go into operational stage. */
 static void ICACHE_FLASH_ATTR
 stage_operational()
@@ -462,6 +433,9 @@ stage_operational()
 /**
  * Main ESP detect event handler.
  *
+ * If the current detection stage is unknown it will reset the config and
+ * start the detection process again.
+ *
  * @param event The event name.
  * @param arg   The event argument.
  */
@@ -475,13 +449,6 @@ main_e_cb(const char *event, void *arg)
     return;
   } else if (g_sta->stage == ESP_DET_ST_CN) {
     stage_connect();
-    return;
-  } else if (g_sta->stage == ESP_DET_ST_DS) {
-    if (g_sta->connected) {
-      stage_detect_srv();
-    } else {
-      stage_connect();
-    }
     return;
   } else if (g_sta->stage == ESP_DET_ST_OP) {
     if (g_sta->connected) {
@@ -558,6 +525,15 @@ wifi_event_cb(System_Event_t *event)
   }
 }
 
+/**
+ * Initialize ESP8266 to the known state.
+ *
+ * - Set current mode to station + AP.
+ * - Turn off reconnect policy.
+ * - Turn off auto connect policy.
+ * - Turn off station DHCP server.
+ * - Turn off AP DHCP policy.
+ */
 static void ICACHE_FLASH_ATTR
 init()
 {
@@ -582,11 +558,11 @@ esp_det_start(char *ap_pass,
               esp_det_done_cb *done_cb,
               esp_det_disconnect *disc_cb,
               esp_det_enc_dec *encrypt,
-              esp_det_enc_dec *decrypt,
-              bool det_srv)
+              esp_det_enc_dec *decrypt)
 {
   esp_cfg_err err;
 
+  // Guards against multiple calls to esp_det_start.
   if (g_cfg != NULL) return ESP_DET_ERR_INITIALIZED;
 
   g_cfg = os_zalloc(sizeof(flash_cfg));
@@ -620,7 +596,6 @@ esp_det_start(char *ap_pass,
   g_sta->encrypt_cb = encrypt;
   g_sta->decrypt_cb = decrypt;
   g_sta->ap_cn = ap_cn;
-  g_sta->det_srv = det_srv;
   g_sta->stage = g_cfg->stage;
   g_sta->connected = false;
   strlcpy(g_sta->ap_pass, ap_pass, ESP_DET_AP_PASS_MAX);
@@ -633,7 +608,6 @@ esp_det_start(char *ap_pass,
   esp_eb_attach(ESP_DET_EV_GOT_IP, got_ip_e_cb);
   esp_eb_attach(ESP_DET_EV_DISC, disc_e_cb);
   esp_eb_attach(ESP_DET_EV_USER, call_user_e_cb);
-  esp_eb_attach(ESP_DET_EV_DISC_SRV, send_udp_br_e_cb);
 
   // Kick off the detection process.
   esp_eb_trigger(ESP_DET_EV_MAIN, NULL);
@@ -649,12 +623,12 @@ esp_det_reset()
 }
 
 void ICACHE_FLASH_ATTR
-esp_det_get_srv(esp_det_srv *srv)
+esp_det_get_mqtt(esp_det_mqtt *srv)
 {
-  srv->ip = g_cfg->srv_ip;
-  srv->port = g_cfg->srv_port;
-  strlcpy(srv->user, g_cfg->srv_user, ESP_DET_SRV_USER_MAX);
-  strlcpy(srv->pass, g_cfg->srv_pass, ESP_DET_SRV_PASS_MAX);
+  srv->ip = g_cfg->mqtt_ip;
+  srv->port = g_cfg->mqtt_port;
+  strlcpy(srv->user, g_cfg->mqtt_user, ESP_DET_MQTT_USER_MAX);
+  strlcpy(srv->pass, g_cfg->mqtt_pass, ESP_DET_MQTT_PASS_MAX);
 }
 
 uint32_t ICACHE_FLASH_ATTR
@@ -725,11 +699,11 @@ cfg_reset()
 {
   g_cfg->magic = ESP_DET_CFG_MAGIC;
   g_cfg->load_cnt = 0;
-  g_cfg->srv_ip = 0;
-  g_cfg->srv_port = 0;
+  g_cfg->mqtt_ip = 0;
+  g_cfg->mqtt_port = 0;
   g_cfg->stage = ESP_DET_ST_DM;
-  os_memset(g_cfg->srv_user, 0, ESP_DET_SRV_USER_MAX);
-  os_memset(g_cfg->srv_pass, 0, ESP_DET_SRV_PASS_MAX);
+  os_memset(g_cfg->mqtt_user, 0, ESP_DET_MQTT_USER_MAX);
+  os_memset(g_cfg->mqtt_pass, 0, ESP_DET_MQTT_PASS_MAX);
   os_memset(g_cfg->ap_name, 0, ESP_DET_AP_NAME_MAX);
   os_memset(g_cfg->ap_pass, 0, ESP_DET_AP_PASS_MAX);
 
@@ -828,14 +802,34 @@ cmd_set_ap(cJSON *cmd)
 {
   // Validate JSON.
 
-  cJSON *ap_name = cJSON_GetObjectItem(cmd, "name");
+  cJSON *ap_name = cJSON_GetObjectItem(cmd, "ap_name");
   if (ap_name == NULL) {
-    return cmd_resp_tpl(false, "missing name key", ESP_DET_ERR_CMD);
+    return cmd_resp_tpl(false, "missing ap_name key", ESP_DET_ERR_CMD);
   }
 
-  cJSON *ap_pass = cJSON_GetObjectItem(cmd, "pass");
+  cJSON *ap_pass = cJSON_GetObjectItem(cmd, "ap_pass");
   if (ap_pass == NULL) {
-    return cmd_resp_tpl(false, "missing pass key", ESP_DET_ERR_CMD);
+    return cmd_resp_tpl(false, "missing ap_pass key", ESP_DET_ERR_CMD);
+  }
+
+  cJSON *srvIp = cJSON_GetObjectItem(cmd, "mqtt_ip");
+  if (srvIp == NULL) {
+    return cmd_resp_tpl(false, "missing mqtt_ key", ESP_DET_ERR_AP);
+  }
+
+  cJSON *srvPort = cJSON_GetObjectItem(cmd, "mqtt_port");
+  if (srvPort == NULL) {
+    return cmd_resp_tpl(false, "missing mqtt_port key", ESP_DET_ERR_AP);
+  }
+
+  cJSON *srvUser = cJSON_GetObjectItem(cmd, "mqtt_user");
+  if (srvUser == NULL) {
+    return cmd_resp_tpl(false, "missing mqtt_user key", ESP_DET_ERR_AP);
+  }
+
+  cJSON *srvPass = cJSON_GetObjectItem(cmd, "mqtt_pass");
+  if (srvPass == NULL) {
+    return cmd_resp_tpl(false, "missing mqtt_pass key", ESP_DET_ERR_AP);
   }
 
   // Check valid stages this command can be run.
@@ -851,6 +845,12 @@ cmd_set_ap(cJSON *cmd)
     return cmd_resp_tpl(false, "failed setting access point", err);
   }
 
+  uint32_t ip = ipaddr_addr(srvIp->valuestring);
+  esp_cfg_err err2 = cfg_set_srv(ip, (uint16_t) srvPort->valueint, srvUser->valuestring, srvPass->valuestring);
+  if (err2 != ESP_CFG_OK) {
+    return cmd_resp_tpl(false, "failed setting main server", err2);
+  }
+
   // Update detection stage.
 
   if (cfg_set_stage(ESP_DET_ST_CN) != ESP_CFG_OK) {
@@ -862,6 +862,7 @@ cmd_set_ap(cJSON *cmd)
   return cmd_resp_tpl(true, "access point set", 0);
 }
 
+// TODO: post it to MQTT
 /** Build UDP discovery broadcast payload. */
 static char *ICACHE_FLASH_ATTR
 cmd_discovery()
@@ -883,56 +884,6 @@ cmd_discovery()
   cJSON_Delete(resp);
 
   return json;
-}
-
-static cJSON *ICACHE_FLASH_ATTR
-cmd_set_srv(cJSON *cmd)
-{
-  // Validate JSON.
-
-  cJSON *srvIp = cJSON_GetObjectItem(cmd, "ip");
-  if (srvIp == NULL) {
-    return cmd_resp_tpl(false, "missing ip key", ESP_DET_ERR_AP);
-  }
-
-  cJSON *srvPort = cJSON_GetObjectItem(cmd, "port");
-  if (srvPort == NULL) {
-    return cmd_resp_tpl(false, "missing port key", ESP_DET_ERR_AP);
-  }
-
-  cJSON *srvUser = cJSON_GetObjectItem(cmd, "user");
-  if (srvUser == NULL) {
-    return cmd_resp_tpl(false, "missing user key", ESP_DET_ERR_AP);
-  }
-
-  cJSON *srvPass = cJSON_GetObjectItem(cmd, "pass");
-  if (srvPass == NULL) {
-    return cmd_resp_tpl(false, "missing pass key", ESP_DET_ERR_AP);
-  }
-
-  // Check valid stages this command can be run.
-
-  if (g_sta->stage != ESP_DET_ST_DS) {
-    return cmd_resp_tpl(false, "unexpected stage", ESP_DET_ERR_CMD);
-  }
-
-  // Make changes.
-
-  uint32_t ip = ipaddr_addr(srvIp->valuestring);
-  esp_cfg_err err = cfg_set_srv(ip, (uint16_t) srvPort->valueint, srvUser->valuestring, srvPass->valuestring);
-  if (err != ESP_CFG_OK) {
-    return cmd_resp_tpl(false, "failed setting main server", err);
-  }
-
-  // Update detection stage.
-
-  if (cfg_set_stage(ESP_DET_ST_OP) != ESP_CFG_OK) {
-    return cmd_resp_tpl(false, "failed setting config stage", ESP_DET_ERR_CFG);
-  }
-
-  // Success.
-
-  return cmd_resp_tpl(true, "main server set", 0);
 }
 
 /**
@@ -974,8 +925,6 @@ cmd_handle_cb(uint8_t *res, uint16 res_len, const uint8_t *req, uint16_t req_len
 
   if (strcmp(det_cmd->valuestring, ESP_DET_CMD_SET_AP) == 0) {
     json_resp = cmd_set_ap(cmd_json);
-  } else if (strcmp(det_cmd->valuestring, ESP_DET_CMD_SET_SRV) == 0) {
-    json_resp = cmd_set_srv(cmd_json);
   } else {
     json_resp = cmd_resp_tpl(false, "unknown command", ESP_DET_ERR_CMD);
   }
@@ -988,53 +937,4 @@ cmd_handle_cb(uint8_t *res, uint16 res_len, const uint8_t *req, uint16_t req_len
   os_free(buff);
 
   return resp_len;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// UDP                                                                       //
-///////////////////////////////////////////////////////////////////////////////
-
-/**
- * Send UDP discovery broadcast.
- *
- * @param ip   The broadcast IP.
- * @param port The port.
- *
- * @return
- */
-static bool ICACHE_FLASH_ATTR
-udp_send_dis_packet(uint32 ip, uint32 port)
-{
-  sint8 err;
-  static esp_udp udp;
-  uint8 *ip_bytes = (uint8 *) &ip;
-
-  g_sta->udp_conn.type = ESPCONN_UDP;
-  g_sta->udp_conn.state = ESPCONN_NONE;
-  g_sta->udp_conn.proto.udp = &udp;
-
-  ESP_DET_DEBUG("Sending broadcast to %d.%d.%d.%d:%d\n", IP2STR(&ip), port);
-
-  os_memcpy(g_sta->udp_conn.proto.udp->remote_ip, ip_bytes, 4);
-  g_sta->udp_conn.proto.udp->remote_port = port;
-
-  if ((err = espconn_create(&g_sta->udp_conn)) != 0) {
-    ESP_DET_ERROR("Creating UDP connection failed (%d).\n", err);
-    return false;
-  }
-
-  char *json = cmd_discovery();
-  sint8 result = espconn_send(&g_sta->udp_conn, (uint8 *) json, (uint16) strlen(json));
-  os_free(json);
-  if (result != ESPCONN_OK) {
-    ESP_DET_ERROR("Failed sending UDP broadcast with error: %d.\n", err);
-    return false;
-  }
-
-  if ((err = espconn_delete(&g_sta->udp_conn)) != 0) {
-    ESP_DET_ERROR("Failed to close UDP connection with error: %d.\n", err);
-    return false;
-  }
-
-  return true;
 }

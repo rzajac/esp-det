@@ -47,9 +47,9 @@
 // The maximum detection access point password length.
 #define ESP_DET_AP_PASS_MAX 18
 // The maximum main server username length.
-#define ESP_DET_SRV_USER_MAX 10
+#define ESP_DET_MQTT_USER_MAX 10
 // The maximum main server password length.
-#define ESP_DET_SRV_PASS_MAX 10
+#define ESP_DET_MQTT_PASS_MAX 10
 // The port to start command server on.
 // Also used as a port for UDP broadcast messages in ESP_DET_ST_DS detection stage.
 #define ESP_DET_CMD_PORT 7802
@@ -59,8 +59,8 @@
 // The ESP detect error codes.
 typedef enum {
   ESP_DET_OK,
-  ESP_DET_ERR_MEM,
-  ESP_DET_ERR_INITIALIZED,
+  ESP_DET_ERR_MEM,             // Out of memory.
+  ESP_DET_ERR_INITIALIZED,     // Already initialized.
   ESP_DET_ERR_OPMODE,
   ESP_DET_ERR_WIFI_CFG_GET,
   ESP_DET_ERR_WIFI_CFG_SET,
@@ -76,13 +76,13 @@ typedef enum {
   ESP_DET_ERR_CFG,
 } esp_det_err;
 
-// Structure describing main server connection.
+// Structure describing MQTT broker connection.
 typedef struct {
   uint32_t ip;   // The main server IP.
   uint16_t port; // The main server port.
-  char user[ESP_DET_SRV_USER_MAX]; // The main server username.
-  char pass[ESP_DET_SRV_PASS_MAX]; // The main server password.
-} esp_det_srv;
+  char user[ESP_DET_MQTT_USER_MAX]; // The main server username.
+  char pass[ESP_DET_MQTT_PASS_MAX]; // The main server password.
+} esp_det_mqtt;
 
 /**
  * Function prototype called when device is successfully configured and is connected to WiFi network.
@@ -115,7 +115,8 @@ typedef uint16 (esp_det_enc_dec)(uint8_t *dst, const uint8_t *src, uint16 src_le
  *
  * - We know the access point and its credentials the ESP8266 should connect to.
  * - The access point connection (from previous point) was successful.
- * - We know the Main Server address and its credentials.
+ *
+ * This function must not be called multiple times.
  *
  * @param ap_pass The password for detection access point.
  * @param ap_cn   The channel to use for detection access point.
@@ -124,7 +125,6 @@ typedef uint16 (esp_det_enc_dec)(uint8_t *dst, const uint8_t *src, uint16 src_le
  *                done_cb will ba called again.
  * @param encrypt The encryption callback. May be set to NULL if no encryption is not needed.
  * @param decrypt The decryption callback. May be set to NULL if no decryption is not needed.
- * @param det_srv Set to true to detect main server.
  *
  * @return Error code.
  */
@@ -134,20 +134,19 @@ esp_det_start(char *ap_pass,
               esp_det_done_cb *done_cb,
               esp_det_disconnect *disc_cb,
               esp_det_enc_dec *encrypt,
-              esp_det_enc_dec *decrypt,
-              bool det_srv);
+              esp_det_enc_dec *decrypt);
 
 /** Reset ESP detect library and start over. */
 void ICACHE_FLASH_ATTR
 esp_det_reset();
 
 /**
- * Set connection details for main server.
+ * Get MQTT broker connection details.
  *
  * @param srv The main server connection details structure.
  */
 void ICACHE_FLASH_ATTR
-esp_det_get_srv(esp_det_srv *srv);
+esp_det_get_mqtt(esp_det_mqtt *srv);
 
 /**
  * Return number of times device was started up.

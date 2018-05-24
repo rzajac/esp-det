@@ -66,8 +66,7 @@ sys_init_done()
                                   run_main_program,
                                   wifi_disconnected,
                                   encrypt,
-                                  decrypt,
-                                  false);
+                                  decrypt);
 
   // No encryption case.
   //esp_det_err err = esp_det_start("password",
@@ -75,8 +74,7 @@ sys_init_done()
   //                                run_main_program,
   //                                wifi_disconnected,
   //                                NULL,
-  //                                NULL,
-  //                                false);
+  //                                NULL);
 
   if (err != ESP_DET_OK) {
     os_printf("ESP detect failed with: %d\n", err);
