@@ -58,22 +58,23 @@
 
 // The ESP detect error codes.
 typedef enum {
-  ESP_DET_OK,
-  ESP_DET_ERR_MEM,             // Out of memory.
-  ESP_DET_ERR_INITIALIZED,     // Already initialized.
-  ESP_DET_ERR_OPMODE,
-  ESP_DET_ERR_WIFI_CFG_GET,
-  ESP_DET_ERR_WIFI_CFG_SET,
+  ESP_DET_OK,                // No error (success).
+  ESP_DET_ERR_MEM,           // Out of memory.
+  ESP_DET_ERR_INITIALIZED,   // Already initialized.
+  ESP_DET_ERR_OPMODE,        // Error setting opmode.
+  ESP_DET_ERR_WIFI_CFG_GET,  // Error getting WiFi configuration.
+  ESP_DET_ERR_WIFI_CFG_SET,  // Error setting WiFi configuration.
   ESP_DET_ERR_DHCP_STOP,
   ESP_DET_ERR_DHCP_START,
   ESP_DET_ERR_DHCP_OPT,
-  ESP_DET_ERR_IP_INFO_GET,
-  ESP_DET_ERR_IP_INFO_SET,
-  ESP_DET_ERR_CMD_BAD_JSON,
-  ESP_DET_ERR_CMD_BAD_FORMAT,
-  ESP_DET_ERR_CMD,
-  ESP_DET_ERR_AP,
-  ESP_DET_ERR_CFG,
+  ESP_DET_ERR_IP_INFO_GET,   // Error getting IP configuration.
+  ESP_DET_ERR_IP_INFO_SET,   // Error setting IP configuration.
+  ESP_DET_ERR_CMD_BAD_JSON,  // Bad JSON format (can't parse).
+  ESP_DET_ERR_CMD_MISSING,   // Missing cmd JSON key.
+  ESP_DET_ERR_UNKNOWN_CMD,   // Unknown JSON command.
+  ESP_DET_ERR_VALIDATION,    // JSON validation error.
+  ESP_DET_ERR_AP_CFG,        // Error configuring access point.
+  ESP_DET_ERR_CFG_SET,
 } esp_det_err;
 
 // Structure describing MQTT broker connection.

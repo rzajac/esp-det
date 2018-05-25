@@ -65,15 +65,12 @@ typedef struct {
   uint8_t ap_cn;      // The channel to use for access point created in ESP_DET_ST_DM.
   uint8_t dm_err_cnt; // Unsuccessful switches to ESP_DET_ST_DM.
   uint8_t cn_err_cnt; // Unsuccessful switches to ESP_DET_ST_CN.
-  uint8_t sr_err_cnt; // Unsuccessful switches to ESP_DET_ST_DS.
-  uint32 brd_addr;    // Broadcast address. Set every time we get an IP address.
   esp_det_st stage;   // The current detection stage.
   esp_det_done_cb *done_cb;    // The user program callback.
   esp_det_disconnect *disc_cb; // The wifi disconnection callback.
   esp_det_enc_dec *encrypt_cb; // Encryption callback.
   esp_det_enc_dec *decrypt_cb; // Decryption callback.
   os_timer_t *ip_to;           // The maximum time for acquiring IP.
-  struct espconn udp_conn;     // The UDP broadcast connection.
 } det_state;
 
 // The configuration loaded from flash.
@@ -92,7 +89,17 @@ static esp_cfg_err ICACHE_FLASH_ATTR cfg_reset();
 
 static esp_cfg_err ICACHE_FLASH_ATTR cfg_set_stage(esp_det_st stage);
 
-static unsigned short ICACHE_FLASH_ATTR cmd_handle_cb(uint8_t *res,
+/**
+ * Handle command callback.
+ *
+ * @param res      Pointer to response buffer.
+ * @param res_len  The response buffer length.
+ * @param req      The client command.
+ * @param req_len  The client command length.
+ *
+ * @return Returns response length.
+ */
+static uint16 ICACHE_FLASH_ATTR cmd_handle_cb(uint8_t *res,
                                                       uint16 res_len,
                                                       const uint8_t *req,
                                                       uint16_t req_len);
@@ -157,7 +164,7 @@ create_ap()
   wifi_get_macaddr(STATION_IF, mac_address);
   os_memset(ap_name, 0, ESP_DET_AP_NAME_MAX);
   // TODO: this needs to be configurable.
-  os_sprintf(ap_name, "IOT_%02X%02X%02X%02X%02X%02X", MAC2STR(mac_address));
+  os_sprintf(ap_name, "AGENT_%02X%02X%02X%02X%02X%02X", MAC2STR(mac_address));
 
   ESP_DET_DEBUG("Creating access point %s / %s\n", ap_name, g_sta->ap_pass);
 
@@ -233,10 +240,10 @@ cfg_set_ap(char *ap_name, char *ap_pass)
   ETS_UART_INTR_DISABLE();
   bool success = wifi_station_set_config(&station_config);
   ETS_UART_INTR_ENABLE();
-  if (success == false) return ESP_DET_ERR_AP;
+  if (success == false) return ESP_DET_ERR_AP_CFG;
 
   esp_cfg_err err = esp_cfg_write(ESP_DET_CFG_IDX);
-  if (err != ESP_CFG_OK) return ESP_DET_ERR_CFG;
+  if (err != ESP_CFG_OK) return ESP_DET_ERR_CFG_SET;
 
   return ESP_DET_OK;
 }
@@ -496,7 +503,6 @@ wifi_event_cb(System_Event_t *event)
                     IP2STR(&(event->event_info.got_ip.ip)),
                     IP2STR(&(event->event_info.got_ip.mask)));
 
-      g_sta->brd_addr = event->event_info.got_ip.ip.addr | (~event->event_info.got_ip.mask.addr);
       esp_eb_trigger(ESP_DET_EV_GOT_IP, NULL);
       break;
 
@@ -588,7 +594,7 @@ esp_det_start(char *ap_pass,
     err = cfg_reset();
     if (err != ESP_CFG_OK) {
       ESP_DET_ERROR("Error %d resetting config.\n", err);
-      return ESP_DET_ERR_CFG;
+      return ESP_DET_ERR_CFG_SET;
     }
   }
 
@@ -684,7 +690,6 @@ cfg_set_stage(esp_det_st stage)
   // When changing detection stage we reset the error counters.
   g_sta->dm_err_cnt = 0;
   g_sta->cn_err_cnt = 0;
-  g_sta->sr_err_cnt = 0;
   stop_ip_to();
 
   return esp_cfg_write(ESP_DET_CFG_IDX);
@@ -711,8 +716,6 @@ cfg_reset()
   // Reset detection state.
   g_sta->dm_err_cnt = 0;
   g_sta->cn_err_cnt = 0;
-  g_sta->sr_err_cnt = 0;
-  g_sta->brd_addr = 0;
   g_sta->stage = g_cfg->stage;
   g_sta->connected = false;
   stop_ip_to();
@@ -720,11 +723,12 @@ cfg_reset()
   return esp_cfg_write(ESP_DET_CFG_IDX);
 }
 
-static uint32_t ICACHE_FLASH_ATTR
-flash_real_size(void)
-{
-  return (uint32_t) (1 << ((spi_flash_get_id() >> 16) & 0xFF));
-}
+// TODO
+//static uint32_t ICACHE_FLASH_ATTR
+//flash_real_size(void)
+//{
+//  return (uint32_t) (1 << ((spi_flash_get_id() >> 16) & 0xFF));
+//}
 
 static uint16 ICACHE_FLASH_ATTR
 encrypt(uint8_t *dst, const uint8_t *src, uint16 src_len)
@@ -781,7 +785,7 @@ cmd_resp_tpl(bool success, char *msg, uint16 code)
  * @param dst_len The maximum response length in bytes.
  * @param resp    The command to send as a response.
  *
- * @return Returns true if response set, false otherwise.
+ * @return Returns response length.
  */
 static uint16 ICACHE_FLASH_ATTR
 cmd_resp(uint8_t *dst, uint16 dst_len, cJSON *resp)
@@ -805,38 +809,38 @@ cmd_set_ap(cJSON *cmd)
 
   cJSON *ap_name = cJSON_GetObjectItem(cmd, "ap_name");
   if (ap_name == NULL) {
-    return cmd_resp_tpl(false, "missing ap_name key", ESP_DET_ERR_CMD);
+    return cmd_resp_tpl(false, "missing ap_name key", ESP_DET_ERR_VALIDATION);
   }
 
   cJSON *ap_pass = cJSON_GetObjectItem(cmd, "ap_pass");
   if (ap_pass == NULL) {
-    return cmd_resp_tpl(false, "missing ap_pass key", ESP_DET_ERR_CMD);
+    return cmd_resp_tpl(false, "missing ap_pass key", ESP_DET_ERR_VALIDATION);
   }
 
   cJSON *srvIp = cJSON_GetObjectItem(cmd, "mqtt_ip");
   if (srvIp == NULL) {
-    return cmd_resp_tpl(false, "missing mqtt_ key", ESP_DET_ERR_AP);
+    return cmd_resp_tpl(false, "missing mqtt_ip key", ESP_DET_ERR_VALIDATION);
   }
 
   cJSON *srvPort = cJSON_GetObjectItem(cmd, "mqtt_port");
   if (srvPort == NULL) {
-    return cmd_resp_tpl(false, "missing mqtt_port key", ESP_DET_ERR_AP);
+    return cmd_resp_tpl(false, "missing mqtt_port key", ESP_DET_ERR_VALIDATION);
   }
 
   cJSON *srvUser = cJSON_GetObjectItem(cmd, "mqtt_user");
   if (srvUser == NULL) {
-    return cmd_resp_tpl(false, "missing mqtt_user key", ESP_DET_ERR_AP);
+    return cmd_resp_tpl(false, "missing mqtt_user key", ESP_DET_ERR_VALIDATION);
   }
 
   cJSON *srvPass = cJSON_GetObjectItem(cmd, "mqtt_pass");
   if (srvPass == NULL) {
-    return cmd_resp_tpl(false, "missing mqtt_pass key", ESP_DET_ERR_AP);
+    return cmd_resp_tpl(false, "missing mqtt_pass key", ESP_DET_ERR_VALIDATION);
   }
 
   // Check valid stages this command can be run.
 
   if (g_sta->stage != ESP_DET_ST_DM) {
-    return cmd_resp_tpl(false, "unexpected stage", ESP_DET_ERR_CMD);
+    return cmd_resp_tpl(false, "unexpected stage", ESP_DET_ERR_VALIDATION);
   }
 
   // Make changes.
@@ -855,7 +859,7 @@ cmd_set_ap(cJSON *cmd)
   // Update detection stage.
 
   if (cfg_set_stage(ESP_DET_ST_CN) != ESP_CFG_OK) {
-    return cmd_resp_tpl(false, "failed setting config stage", ESP_DET_ERR_CFG);
+    return cmd_resp_tpl(false, "failed setting config stage", ESP_DET_ERR_CFG_SET);
   }
 
   // Success.
@@ -863,38 +867,30 @@ cmd_set_ap(cJSON *cmd)
   return cmd_resp_tpl(true, "access point set", 0);
 }
 
-// TODO: post it to MQTT
-/** Build UDP discovery broadcast payload. */
-static char *ICACHE_FLASH_ATTR
-cmd_discovery()
-{
-  uint8 mac[6];
-  char mac_str[ESP_DET_AP_NAME_MAX];
+//// TODO: post it to MQTT
+///** Build UDP discovery broadcast payload. */
+//static char *ICACHE_FLASH_ATTR
+//cmd_discovery()
+//{
+//  uint8 mac[6];
+//  char mac_str[ESP_DET_AP_NAME_MAX];
+//
+//  os_memset(mac, 0, 6);
+//  os_memset(mac_str, 0, ESP_DET_AP_NAME_MAX);
+//  wifi_get_macaddr(STATION_IF, mac);
+//  os_sprintf(mac_str, "%02X%02X%02X%02X%02X%02X", MAC2STR(mac));
+//
+//  cJSON *resp = cJSON_CreateObject();
+//  cJSON_AddItemToObject(resp, "cmd", cJSON_CreateString(ESP_DET_CMD_DISCOVERY));
+//  cJSON_AddItemToObject(resp, "mac", cJSON_CreateString(mac_str));
+//  cJSON_AddItemToObject(resp, "memory", cJSON_CreateNumber(flash_real_size()));
+//
+//  char *json = cJSON_PrintUnformatted(resp);
+//  cJSON_Delete(resp);
+//
+//  return json;
+//}
 
-  os_memset(mac, 0, 6);
-  os_memset(mac_str, 0, ESP_DET_AP_NAME_MAX);
-  wifi_get_macaddr(STATION_IF, mac);
-  os_sprintf(mac_str, "%02X%02X%02X%02X%02X%02X", MAC2STR(mac));
-
-  cJSON *resp = cJSON_CreateObject();
-  cJSON_AddItemToObject(resp, "cmd", cJSON_CreateString(ESP_DET_CMD_DISCOVERY));
-  cJSON_AddItemToObject(resp, "mac", cJSON_CreateString(mac_str));
-  cJSON_AddItemToObject(resp, "memory", cJSON_CreateNumber(flash_real_size()));
-
-  char *json = cJSON_PrintUnformatted(resp);
-  cJSON_Delete(resp);
-
-  return json;
-}
-
-/**
- * Handle command callback.
- *
- * @param res      Pointer to response buffer.
- * @param res_len  The response buffer length.
- * @param req      The client command.
- * @param req_len  The client command length.
- */
 static uint16 ICACHE_FLASH_ATTR
 cmd_handle_cb(uint8_t *res, uint16 res_len, const uint8_t *req, uint16_t req_len)
 {
@@ -918,7 +914,7 @@ cmd_handle_cb(uint8_t *res, uint16 res_len, const uint8_t *req, uint16_t req_len
 
   cJSON *det_cmd = cJSON_GetObjectItem(cmd_json, "cmd");
   if (det_cmd == NULL) {
-    json_resp = cmd_resp_tpl(false, "bad command format", ESP_DET_ERR_CMD_BAD_FORMAT);
+    json_resp = cmd_resp_tpl(false, "bad command format", ESP_DET_ERR_CMD_MISSING);
     cJSON_Delete(cmd_json);
     os_free(buff);
     return cmd_resp(res, res_len, json_resp);
@@ -927,7 +923,7 @@ cmd_handle_cb(uint8_t *res, uint16 res_len, const uint8_t *req, uint16_t req_len
   if (strcmp(det_cmd->valuestring, ESP_DET_CMD_SET_AP) == 0) {
     json_resp = cmd_set_ap(cmd_json);
   } else {
-    json_resp = cmd_resp_tpl(false, "unknown command", ESP_DET_ERR_CMD);
+    json_resp = cmd_resp_tpl(false, "unknown command", ESP_DET_ERR_UNKNOWN_CMD);
   }
 
   resp_len = cmd_resp(res, res_len, json_resp);
