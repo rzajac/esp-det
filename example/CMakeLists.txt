@@ -26,6 +26,7 @@ add_executable(esp_det_ex
     ${ESP_USER_CONFIG})
 
 target_include_directories(esp_det_ex PUBLIC
+    ${esp_det_SOURCE_DIR}/include
     ${esp_sdo_INCLUDE_DIRS}
     ${esp_aes_INCLUDE_DIRS}
     ${esp_eb_INCLUDE_DIRS}
