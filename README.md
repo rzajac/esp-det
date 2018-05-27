@@ -51,7 +51,7 @@ through TCP access point configuration. Example request:
 if everything goes well ESP should respond with:
 
 ```json
-{"success":true,"code":0,"msg":"access point set"}
+{"success":true,"code":0,"msg":"configuration set"}
 ```
 
 If we configured library to detect Main Server the ESP will start sending broadcasts 

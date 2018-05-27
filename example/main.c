@@ -61,20 +61,19 @@ sys_init_done()
   os_printf("System initialized. Starting ESP detection.\n");
   os_printf("RTC cycle: %d\n", system_rtc_clock_cali_proc() >> 12);
 
-  esp_det_err err = esp_det_start("password",
+  esp_det_enc_dec *encrypt_fn = NULL;
+  esp_det_enc_dec *decrypt_fn = NULL;
+
+  encrypt_fn = encrypt;
+  decrypt_fn = decrypt;
+
+  esp_det_err err = esp_det_start("AGENT",
+                                  "password",
                                   6,
                                   run_main_program,
                                   wifi_disconnected,
-                                  encrypt,
-                                  decrypt);
-
-  // No encryption case.
-  //esp_det_err err = esp_det_start("password",
-  //                                6,
-  //                                run_main_program,
-  //                                wifi_disconnected,
-  //                                NULL,
-  //                                NULL);
+                                  encrypt_fn,
+                                  decrypt_fn);
 
   if (err != ESP_DET_OK) {
     os_printf("ESP detect failed with: %d\n", err);

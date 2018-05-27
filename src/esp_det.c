@@ -32,14 +32,14 @@
 
 // Supported commands.
 #define ESP_DET_CMD_SET_AP "cfg"
-#define ESP_DET_CMD_DISCOVERY "iotDiscovery"
 
+// Delay in ms for calling mine function.
 #define ESP_DET_FAST_CALL 10
 #define ESP_DET_SLOW_CALL 500
 
 // The ESP detection stages.
 typedef enum {
-  ESP_DET_ST_DM = 1, // Creates AP and waits for detection and configuration.
+  ESP_DET_ST_DM = 1, // Creates AP and waits for detection and configuration data.
   ESP_DET_ST_CN,     // Connecting to access point.
   ESP_DET_ST_OP      // All needed configuration is present. Relinquish control to user program.
 } esp_det_st;
@@ -61,8 +61,9 @@ typedef struct STORE_ATTR {
 typedef struct {
   bool connected;     // Set to true if we are connected to access point.
   bool dm_run;        // Was detect me stage running.
-  char *ap_pass;      // The password for access point created in ESP_DET_ST_DM.
-  uint8_t ap_cn;      // The channel to use for access point created in ESP_DET_ST_DM.
+  char *ap_prefix;    // The access point name prefix.
+  char *ap_pass;      // The password for access point.
+  uint8_t ap_cn;      // The channel to use for access point.
   uint8_t dm_err_cnt; // Unsuccessful switches to ESP_DET_ST_DM.
   uint8_t cn_err_cnt; // Unsuccessful switches to ESP_DET_ST_CN.
   esp_det_st stage;   // The current detection stage.
@@ -100,9 +101,9 @@ static esp_cfg_err ICACHE_FLASH_ATTR cfg_set_stage(esp_det_st stage);
  * @return Returns response length.
  */
 static uint16 ICACHE_FLASH_ATTR cmd_handle_cb(uint8_t *res,
-                                                      uint16 res_len,
-                                                      const uint8_t *req,
-                                                      uint16_t req_len);
+                                              uint16 res_len,
+                                              const uint8_t *req,
+                                              uint16_t req_len);
 
 ///////////////////////////////////////////////////////////////////////////////
 // ESP detection                                                             //
@@ -117,6 +118,7 @@ static uint16 ICACHE_FLASH_ATTR cmd_handle_cb(uint8_t *res,
 static void ICACHE_FLASH_ATTR
 call_user_e_cb(const char *event, void *arg)
 {
+  UNUSED(event);
   g_sta->done_cb((esp_det_err) ((uint32_t) arg));
 }
 
@@ -128,7 +130,8 @@ call_user_e_cb(const char *event, void *arg)
  * @return True if configs are equal.
  */
 static bool ICACHE_FLASH_ATTR
-ap_config_equal(struct softap_config *c1, struct softap_config *c2) {
+ap_config_equal(struct softap_config *c1, struct softap_config *c2)
+{
   if (os_strncmp((const char *) c1->ssid, (const char *) c2->ssid, 32) != 0) {
     return false;
   }
@@ -163,10 +166,9 @@ create_ap()
   // Build access point name.
   wifi_get_macaddr(STATION_IF, mac_address);
   os_memset(ap_name, 0, ESP_DET_AP_NAME_MAX);
-  // TODO: this needs to be configurable.
-  os_sprintf(ap_name, "AGENT_%02X%02X%02X%02X%02X%02X", MAC2STR(mac_address));
+  os_sprintf(ap_name, "%s_%02X%02X%02X%02X%02X%02X", g_sta->ap_prefix, MAC2STR(mac_address));
 
-  ESP_DET_DEBUG("Creating access point %s / %s\n", ap_name, g_sta->ap_pass);
+  ESP_DET_DEBUG("Creating access point '%s/%s'\n", ap_name, g_sta->ap_pass);
 
   // Make sure we are in correct opmode.
   if (wifi_get_opmode() != STATIONAP_MODE) {
@@ -231,11 +233,11 @@ cfg_set_ap(char *ap_name, char *ap_pass)
   strlcpy(g_cfg->ap_name, ap_name, ESP_DET_AP_NAME_MAX);
   strlcpy(g_cfg->ap_pass, ap_pass, ESP_DET_AP_NAME_MAX);
 
-  ESP_DET_DEBUG("Setting access point config: %s/%s\n", ap_name, ap_pass);
-
   os_memset(&station_config, 0, sizeof(struct station_config));
   strlcpy((char *) station_config.ssid, ap_name, 32);
   strlcpy((char *) station_config.password, ap_pass, 64);
+
+  ESP_DET_DEBUG("Setting access point config: '%s/%s'\n", station_config.ssid, station_config.password);
 
   ETS_UART_INTR_DISABLE();
   bool success = wifi_station_set_config(&station_config);
@@ -315,6 +317,8 @@ get_ip_to_cb()
 static void ICACHE_FLASH_ATTR
 got_ip_e_cb(const char *event, void *arg)
 {
+  UNUSED(event);
+  UNUSED(arg);
   ESP_DET_DEBUG("Running got_ip_e_cb in stage %d.\n", g_sta->stage);
 
   stop_ip_to();
@@ -337,6 +341,7 @@ got_ip_e_cb(const char *event, void *arg)
 static void ICACHE_FLASH_ATTR
 disc_e_cb(const char *event, void *arg)
 {
+  UNUSED(event);
   uint32_t reason = (uint32_t) arg;
 
   ESP_DET_DEBUG("Running disc_e_cb in stage %d reason %d.\n", g_sta->stage, reason);
@@ -372,21 +377,20 @@ stage_detect_me()
 
   g_sta->dm_run = true;
 
-  // Setup
+  // Create access point.
   err = create_ap();
   if (err != ESP_DET_OK) {
     trigger_main(false, ESP_DET_SLOW_CALL);
     return;
   }
 
+  // Start command server.
   sint8 cmd_err = esp_cmd_start(ESP_DET_CMD_PORT, ESP_DET_CMD_MAX, &cmd_handle_cb);
   if (cmd_err != ESPCONN_OK && cmd_err != ESP_CMD_ERR_ALREADY_STARTED) {
     ESP_DET_ERROR("Starting command server failed with error code %d.\n", cmd_err);
     trigger_main(false, ESP_DET_SLOW_CALL);
     return;
   }
-
-  // End
 }
 
 /** Go into wifi connect stage. */
@@ -450,6 +454,8 @@ stage_operational()
 static void ICACHE_FLASH_ATTR
 main_e_cb(const char *event, void *arg)
 {
+  UNUSED(event);
+  UNUSED(arg);
   ESP_DET_DEBUG("Running main_e_cb in stage %d.\n", g_sta->stage);
 
   if (g_sta->stage == ESP_DET_ST_DM) {
@@ -560,7 +566,8 @@ init()
 }
 
 esp_det_err ICACHE_FLASH_ATTR
-esp_det_start(char *ap_pass,
+esp_det_start(char *ap_prefix,
+              char *ap_pass,
               uint8_t ap_cn,
               esp_det_done_cb *done_cb,
               esp_det_disconnect *disc_cb,
@@ -581,13 +588,22 @@ esp_det_start(char *ap_pass,
     return ESP_DET_ERR_MEM;
   }
 
-  g_sta->ap_pass = os_zalloc(ESP_DET_AP_PASS_MAX);
-  if (g_sta->ap_pass == NULL) {
+  g_sta->ap_prefix = os_zalloc(ESP_DET_AP_NAME_PREFIX_MAX);
+  if (g_sta->ap_prefix == NULL) {
     os_free(g_cfg);
     os_free(g_sta);
     return ESP_DET_ERR_MEM;
   }
 
+  g_sta->ap_pass = os_zalloc(ESP_DET_AP_PASS_MAX);
+  if (g_sta->ap_pass == NULL) {
+    os_free(g_cfg);
+    os_free(g_sta);
+    os_free(g_sta->ap_prefix);
+    return ESP_DET_ERR_MEM;
+  }
+
+  ESP_DET_DEBUG("BEFORE\n");
   err = load_config();
   if (err != ESP_CFG_OK) {
     ESP_DET_ERROR("Error %d loading configuration. Resetting config.\n", err);
@@ -597,6 +613,7 @@ esp_det_start(char *ap_pass,
       return ESP_DET_ERR_CFG_SET;
     }
   }
+  ESP_DET_DEBUG("AFTER\n");
 
   g_sta->done_cb = done_cb;
   g_sta->disc_cb = disc_cb;
@@ -605,6 +622,7 @@ esp_det_start(char *ap_pass,
   g_sta->ap_cn = ap_cn;
   g_sta->stage = g_cfg->stage;
   g_sta->connected = false;
+  strlcpy(g_sta->ap_prefix, ap_prefix, ESP_DET_AP_NAME_PREFIX_MAX);
   strlcpy(g_sta->ap_pass, ap_pass, ESP_DET_AP_PASS_MAX);
 
   init();
@@ -790,6 +808,7 @@ cmd_resp_tpl(bool success, char *msg, uint16 code)
 static uint16 ICACHE_FLASH_ATTR
 cmd_resp(uint8_t *dst, uint16 dst_len, cJSON *resp)
 {
+  UNUSED(dst_len);
   uint16 resp_len = 0;
 
   char *resp_str = cJSON_PrintUnformatted(resp);
@@ -864,7 +883,7 @@ cmd_set_ap(cJSON *cmd)
 
   // Success.
 
-  return cmd_resp_tpl(true, "access point set", 0);
+  return cmd_resp_tpl(true, "configuration set", 0);
 }
 
 //// TODO: post it to MQTT

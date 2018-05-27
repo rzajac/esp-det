@@ -23,29 +23,34 @@
 #include <user_interface.h>
 
 #ifndef ESP_DET_DEBUG_ON
-  #define ESP_DET_DEBUG_ON 1
+#define ESP_DET_DEBUG_ON 1
 #endif
 
 #ifndef DEBUG_ON
-  #define DEBUG_ON 0
+#define DEBUG_ON 0
 #endif
 
 #if ESP_DET_DEBUG_ON || DEBUG_ON
-  #define ESP_DET_DEBUG(format, ...) os_printf("DET DBG: " format, ## __VA_ARGS__ )
+#define ESP_DET_DEBUG(format, ...) os_printf("DET DBG: " format, ## __VA_ARGS__ )
 #else
-  #define ESP_DET_DEBUG(format, ...) do {} while(0)
+#define ESP_DET_DEBUG(format, ...) do {} while(0)
 #endif
 
 #define ESP_DET_ERROR(format, ...) os_printf("DET ERR: " format, ## __VA_ARGS__ )
+
+// Used for unused arguments.
+#define UNUSED(x) ( (void)(x) )
 
 // This must be changed every time flash_cfg structure changes.
 #define ESP_DET_CFG_MAGIC 16
 // The esp_cfg configuration index to use.
 #define ESP_DET_CFG_IDX 0
 // The maximum detection access point name length.
-#define ESP_DET_AP_NAME_MAX 18
+#define ESP_DET_AP_NAME_MAX 20
+// The maximum detection access point name prefix.
+#define ESP_DET_AP_NAME_PREFIX_MAX 6
 // The maximum detection access point password length.
-#define ESP_DET_AP_PASS_MAX 18
+#define ESP_DET_AP_PASS_MAX 20
 // The maximum main server username length.
 #define ESP_DET_MQTT_USER_MAX 10
 // The maximum main server password length.
@@ -119,18 +124,20 @@ typedef uint16 (esp_det_enc_dec)(uint8_t *dst, const uint8_t *src, uint16 src_le
  *
  * This function must not be called multiple times.
  *
- * @param ap_pass The password for detection access point.
- * @param ap_cn   The channel to use for detection access point.
- * @param done_cb The user program callback. ESP8266 configured and connected to WiFi network.
- * @param disc_cb Notify user program that we are no longer connected to wifi. When connection is restored
- *                done_cb will ba called again.
- * @param encrypt The encryption callback. May be set to NULL if no encryption is not needed.
- * @param decrypt The decryption callback. May be set to NULL if no decryption is not needed.
+ * @param ap_prefix The access point name prefix.
+ * @param ap_pass   The password for detection access point.
+ * @param ap_cn     The channel to use for detection access point.
+ * @param done_cb   The user program callback. ESP8266 configured and connected to WiFi network.
+ * @param disc_cb   Notify user program that we are no longer connected to wifi. When connection is restored
+ *                  done_cb will ba called again.
+ * @param encrypt   The encryption callback. May be set to NULL if no encryption is not needed.
+ * @param decrypt   The decryption callback. May be set to NULL if no decryption is not needed.
  *
  * @return Error code.
  */
 esp_det_err ICACHE_FLASH_ATTR
-esp_det_start(char *ap_pass,
+esp_det_start(char *ap_prefix,
+              char *ap_pass,
               uint8_t ap_cn,
               esp_det_done_cb *done_cb,
               esp_det_disconnect *disc_cb,
