@@ -61,6 +61,7 @@ typedef struct STORE_ATTR {
 typedef struct {
   bool connected;     // Set to true if we are connected to access point.
   bool dm_run;        // Was detect me stage running.
+  bool restarting;        // Restarting.
   char *ap_prefix;    // The access point name prefix.
   char *ap_pass;      // The password for access point.
   uint8_t ap_cn;      // The channel to use for access point.
@@ -434,6 +435,7 @@ stage_operational()
 
   if (g_sta->dm_run) {
     ESP_DET_DEBUG("Will restart...\n");
+    g_sta->restarting = true;
     system_restart();
     return;
   }
@@ -486,6 +488,10 @@ main_e_cb(const char *event, void *arg)
 static void ICACHE_FLASH_ATTR
 wifi_event_cb(System_Event_t *event)
 {
+  if (g_sta->restarting == true) {
+    return;
+  }
+
   switch (event->event) {
     case EVENT_STAMODE_CONNECTED:
       ESP_DET_DEBUG("Wifi event: EVENT_STAMODE_CONNECTED\n");

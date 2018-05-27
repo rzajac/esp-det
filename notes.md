@@ -22,4 +22,5 @@ network={
 
 ```
 esptool.py -p /dev/ttyUSB0 -b 74880 write_flash 0x3fc000 esp_init_data_default.bin
+~/esproot/esptool/esptool.py -p /dev/ttyUSB0 erase_region 0xC000 0x1000
 ```
