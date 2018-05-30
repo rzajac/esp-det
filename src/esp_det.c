@@ -116,7 +116,11 @@ static uint16 ICACHE_FLASH_ATTR cmd_handle_cb(uint8_t *res,
 // IP related functions                                                      //
 ///////////////////////////////////////////////////////////////////////////////
 
-/** Stop get IP time out timer and release g_sta->ip_to memory. */
+/**
+ * Stop get IP time out.
+ *
+ * It also releases g_sta->ip_to memory.
+ */
 static void ICACHE_FLASH_ATTR
 get_ip_to_stop()
 {
@@ -127,7 +131,12 @@ get_ip_to_stop()
   g_sta->ip_to = NULL;
 }
 
-/** Getting IP address timeout callback. */
+/**
+ * Getting IP address timeout callback.
+ *
+ * Called when we don't get IP address from access point
+ * within given timeout.
+ */
 static void ICACHE_FLASH_ATTR
 get_ip_to_cb()
 {
