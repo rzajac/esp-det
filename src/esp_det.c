@@ -146,6 +146,12 @@ esp_det_start(char *ap_prefix,
     return ESP_DET_ERR_MEM;
   }
 
+  g_cfg = os_zalloc(sizeof(flash_cfg));
+  if (g_cfg == NULL) {
+    os_free(g_sta);
+    return ESP_DET_ERR_MEM;
+  }
+
   // Load configuration from flash or reset config to default values on error.
   if ((cfg_load()) != ESP_DET_OK) {
     if (cfg_reset() != ESP_DET_OK) {
