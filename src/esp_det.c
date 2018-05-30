@@ -47,7 +47,6 @@ typedef enum {
 // The ESP detection flash stored configuration.
 typedef struct STORE_ATTR {
   uint8_t magic;      // The magic number indicating the config version.
-  uint32_t load_cnt;  // The number of times config was loaded from flash.
   uint32_t mqtt_ip;   // The MQTT broker IP.
   uint16_t mqtt_port; // The MQTT broker port.
   esp_det_st stage;   // The current detection stage.
@@ -148,8 +147,7 @@ esp_det_start(char *ap_prefix,
   }
 
   // Load configuration from flash or reset config to default values on error.
-  if (cfg_load() != ESP_DET_OK) {
-    ESP_DET_ERROR("resetting config\n");
+  if ((cfg_load()) != ESP_DET_OK) {
     if (cfg_reset() != ESP_DET_OK) {
       return ESP_DET_ERR_CFG_LOAD;
     }
@@ -203,12 +201,6 @@ esp_det_get_mqtt(esp_det_mqtt *srv)
   strlcpy(srv->pass, g_cfg->mqtt_pass, ESP_DET_MQTT_PASS_MAX);
 }
 
-uint32_t ICACHE_FLASH_ATTR
-esp_det_start_cnt()
-{
-  return g_cfg->load_cnt;
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // IP related functions                                                      //
 ///////////////////////////////////////////////////////////////////////////////
@@ -224,15 +216,10 @@ esp_det_start_cnt()
 static void ICACHE_FLASH_ATTR
 ip_to_start(uint32 ms)
 {
-  if (g_sta->ip_to == NULL) {
-    return;
-  }
+  if (g_sta->ip_to != NULL) return;
 
   g_sta->ip_to = os_zalloc(sizeof(os_timer_t));
-  if (g_sta->ip_to == NULL) {
-    ESP_DET_ERROR("out of memory allocating os_timer_t\n");
-    return;
-  }
+  if (g_sta->ip_to == NULL) return; // TODO: this holds the system.
 
   os_timer_setfn(g_sta->ip_to, (os_timer_func_t *) ip_to_cb, NULL);
   os_timer_arm(g_sta->ip_to, ms, false);
@@ -262,9 +249,8 @@ ip_to_stop()
 static void ICACHE_FLASH_ATTR
 ip_to_cb()
 {
-  ESP_DET_DEBUG("running ip_to_cb in stage %d\n", g_sta->stage);
+  ESP_DET_DEBUG("did not receive IP\n");
 
-  ip_to_stop();
   cfg_reset();
   esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_FAST_CALL, NULL);
 }
@@ -280,7 +266,6 @@ ip_got_cb(const char *event, void *arg)
 {
   UNUSED(event);
   UNUSED(arg);
-  ESP_DET_DEBUG("running ip_got_cb in stage %d\n", g_sta->stage);
 
   ip_to_stop();
   g_sta->connected = true;
@@ -288,17 +273,15 @@ ip_got_cb(const char *event, void *arg)
   if (g_sta->stage == ESP_DET_ST_CN) {
     cfg_set_stage(ESP_DET_ST_OP);
     esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_FAST_CALL, NULL);
-    return;
-  }
 
-  if (g_sta->stage == ESP_DET_ST_OP) {
+  } else if (g_sta->stage == ESP_DET_ST_OP) {
     esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_FAST_CALL, NULL);
-    return;
-  }
 
-  ESP_DET_ERROR("run ip_got_cb in unexpected stage %d\n", g_sta->stage);
-  cfg_reset();
-  esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
+  } else {
+    ESP_DET_ERROR("run ip_got_cb in unexpected stage %d\n", g_sta->stage);
+    cfg_reset();
+    esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -341,7 +324,7 @@ create_ap()
 
   // Make sure we are in correct opmode.
   if (wifi_get_opmode() != STATIONAP_MODE) {
-    if (!wifi_set_opmode_current(STATIONAP_MODE)) {
+    if (wifi_set_opmode_current(STATIONAP_MODE) == false) {
       return ESP_DET_ERR_OPMODE;
     }
   }
@@ -394,33 +377,13 @@ create_ap()
 static esp_det_err ICACHE_FLASH_ATTR
 cfg_load()
 {
-  esp_cfg_err err;
-
-  err = esp_cfg_init(ESP_DET_CFG_IDX, g_cfg, sizeof(flash_cfg));
-  if (err != ESP_CFG_OK) {
-    ESP_DET_ERROR("error initializing config (ESP_CFG: %d)\n", err);
+  if (esp_cfg_init(ESP_DET_CFG_IDX, g_cfg, sizeof(flash_cfg)) != ESP_CFG_OK) {
     return ESP_DET_ERR_CFG_INIT;
   }
 
-  err = esp_cfg_read(ESP_DET_CFG_IDX);
-  if (err != ESP_CFG_OK) {
-    ESP_DET_ERROR("error loading config (ESP_CFG: %d)\n", err);
-    return ESP_DET_ERR_CFG_LOAD;
-  }
-
   // Check if we get what we expected.
-  if (g_cfg->magic != ESP_DET_CFG_MAGIC) {
-    ESP_DET_ERROR("error validating config - resetting config\n");
+  if (esp_cfg_read(ESP_DET_CFG_IDX) != ESP_CFG_OK || g_cfg->magic != ESP_DET_CFG_MAGIC) {
     return ESP_DET_ERR_CFG_LOAD;
-  }
-
-  // Bump load counter and save.
-  g_cfg->load_cnt += 1;
-
-  err = esp_cfg_write(ESP_DET_CFG_IDX);
-  if (err != ESP_CFG_OK) {
-    ESP_DET_ERROR("error writing config (ESP_CFG: %d)\n", err);
-    return ESP_DET_ERR_CFG_WRITE;
   }
 
   return ESP_DET_OK;
@@ -470,8 +433,7 @@ cfg_set(
   ETS_UART_INTR_ENABLE();
   if (success == false) return ESP_DET_ERR_AP_CFG;
 
-  esp_cfg_err err = esp_cfg_write(ESP_DET_CFG_IDX);
-  if (err != ESP_CFG_OK) return ESP_DET_ERR_CFG_WRITE;
+  if (esp_cfg_write(ESP_DET_CFG_IDX) != ESP_CFG_OK) return ESP_DET_ERR_CFG_WRITE;
 
   return ESP_DET_OK;
 }
@@ -488,17 +450,16 @@ cfg_set_stage(esp_det_st stage)
 {
   ESP_DET_DEBUG("Setting stage to %d.\n", stage);
 
+  ip_to_stop();
+
   g_cfg->stage = stage;
   g_sta->stage = stage;
 
   // When changing detection stage we reset the error counters.
   g_sta->dm_err_cnt = 0;
   g_sta->cn_err_cnt = 0;
-  ip_to_stop();
 
-  esp_cfg_err err = esp_cfg_write(ESP_DET_CFG_IDX);
-  if (err != ESP_CFG_OK) {
-    ESP_DET_ERROR("error writing config (ESP_CFG: %d)\n", err);
+  if (esp_cfg_write(ESP_DET_CFG_IDX) != ESP_CFG_OK) {
     return ESP_DET_ERR_CFG_WRITE;
   }
 
@@ -513,8 +474,9 @@ cfg_set_stage(esp_det_st stage)
 static esp_det_err ICACHE_FLASH_ATTR
 cfg_reset()
 {
-  esp_cfg_err err;
+  ip_to_stop();
 
+  // Reset flash config.
   os_memset(g_cfg, 0, sizeof(flash_cfg));
   g_cfg->magic = ESP_DET_CFG_MAGIC;
   g_cfg->stage = ESP_DET_ST_DM;
@@ -525,11 +487,8 @@ cfg_reset()
   g_sta->dm_err_cnt = 0;
   g_sta->cn_err_cnt = 0;
   g_sta->stage = ESP_DET_ST_DM;
-  ip_to_stop();
 
-  err = esp_cfg_write(ESP_DET_CFG_IDX);
-  if (err != ESP_CFG_OK) {
-    ESP_DET_ERROR("error writing config (ESP_CFG: %d)\n", err);
+  if (esp_cfg_write(ESP_DET_CFG_IDX) != ESP_CFG_OK) {
     return ESP_DET_ERR_CFG_WRITE;
   }
 
@@ -543,8 +502,8 @@ disc_e_cb(const char *event, void *arg)
   UNUSED(event);
   uint32_t reason = (uint32_t) arg;
 
-  ESP_DET_DEBUG("running disc_e_cb in stage %d reason %d\n", g_sta->stage, reason);
   g_sta->connected = false;
+  ESP_DET_DEBUG("running disc_e_cb in stage %d reason %d\n", g_sta->stage, reason);
 
   if (g_sta->stage == ESP_DET_ST_DM) return;
 
@@ -554,6 +513,7 @@ disc_e_cb(const char *event, void *arg)
   }
 
   if (g_sta->disc_cb && g_sta->stage == ESP_DET_ST_OP) g_sta->disc_cb();
+
   cfg_set_stage(ESP_DET_ST_CN);
   esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_FAST_CALL, NULL);
 }
@@ -562,10 +522,6 @@ disc_e_cb(const char *event, void *arg)
 static void ICACHE_FLASH_ATTR
 stage_detect_me()
 {
-  esp_det_err err;
-
-  ESP_DET_DEBUG("running stage_detect_me in stage %d\n", g_sta->stage);
-
   // Check back off.
   g_sta->dm_err_cnt += 1;
   if (g_sta->dm_err_cnt >= 10) {
@@ -587,8 +543,7 @@ stage_detect_me()
   ESP_DET_DEBUG("wifi_softap_dhcps_stop: %d\n", success);
 
   // Create access point.
-  err = create_ap();
-  if (err != ESP_DET_OK) {
+  if (create_ap() != ESP_DET_OK) {
     esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
     return;
   }
@@ -606,7 +561,7 @@ stage_detect_me()
 static void ICACHE_FLASH_ATTR
 stage_connect()
 {
-  ESP_DET_DEBUG("running stage_connect in stage %d\n", g_sta->stage);
+  ESP_DET_DEBUG("running stage_connect (%d)\n", g_sta->stage);
 
   g_sta->cn_err_cnt += 1;
   if (g_sta->cn_err_cnt >= 10) {
@@ -615,29 +570,33 @@ stage_connect()
     return;
   }
 
+  if (wifi_set_opmode(STATION_MODE) != true) {
+    ESP_DET_ERROR("failed to change opmode in stage_connect\n");
+    cfg_reset();
+    esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
+  }
+
   // Connect to access point and wait for IP for 15 seconds.
   if (wifi_station_connect() == false) {
     ESP_DET_ERROR("calling wifi_station_connect failed\n");
     esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
     return;
   }
-  ip_to_start(15000);
 }
 
 /** Go into operational stage. */
 static void ICACHE_FLASH_ATTR
 stage_operational()
 {
-  ESP_DET_DEBUG("running stage_operational in stage %d\n", g_sta->stage);
+  ESP_DET_DEBUG("running stage_operational (%d)\n", g_sta->stage);
 
   if (g_sta->dm_run) {
-    ESP_DET_DEBUG("Will restart...\n");
+    ESP_DET_DEBUG("restarting...\n");
     g_sta->restarting = true;
     system_restart();
     return;
   }
 
-  wifi_set_opmode(STATION_MODE);
   esp_eb_trigger(ESP_DET_EV_USER, NULL);
 }
 

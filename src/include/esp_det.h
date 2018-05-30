@@ -162,12 +162,4 @@ esp_det_stop();
 void ICACHE_FLASH_ATTR
 esp_det_get_mqtt(esp_det_mqtt *srv);
 
-/**
- * Return number of times device was started up.
- *
- * @return Start count.
- */
-uint32_t ICACHE_FLASH_ATTR
-esp_det_start_cnt();
-
 #endif //ESP_DET_H
