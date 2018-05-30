@@ -436,6 +436,7 @@ cfg_set(
   strlcpy(g_cfg->mqtt_user, mqtt_user, ESP_DET_MQTT_USER_MAX);
   strlcpy(g_cfg->mqtt_pass, mqtt_pass, ESP_DET_MQTT_PASS_MAX);
   g_cfg->stage = stage;
+  g_sta->stage = stage;
 
   os_memset(&station_config, 0, sizeof(struct station_config));
   strlcpy((char *) station_config.ssid, ap_name, 32);
