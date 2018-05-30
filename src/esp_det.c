@@ -97,8 +97,6 @@ static void ICACHE_FLASH_ATTR ip_to_cb();
 static void ICACHE_FLASH_ATTR ip_got_cb(const char *event, void *arg);
 
 
-static void ICACHE_FLASH_ATTR trigger_main(bool reset_cfg, uint32_t delay);
-
 static void ICACHE_FLASH_ATTR main_e_cb(const char *event, void *arg);
 
 static void ICACHE_FLASH_ATTR wifi_event_cb(System_Event_t *event);
@@ -149,7 +147,7 @@ esp_det_start(char *ap_prefix,
 
   // Load configuration from flash or reset config to default values on error.
   if (cfg_load() != ESP_DET_OK) {
-    ESP_DET_ERROR("Resetting config.\n");
+    ESP_DET_ERROR("resetting config\n");
     cfg_reset();
     return ESP_DET_ERR_CFG_LOAD;
   }
@@ -186,7 +184,8 @@ void ICACHE_FLASH_ATTR
 esp_det_reset()
 {
   init();
-  trigger_main(true, ESP_DET_FAST_CALL);
+  cfg_reset();
+  esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_FAST_CALL, NULL);
 }
 
 void ICACHE_FLASH_ATTR
@@ -225,7 +224,7 @@ ip_to_start(uint32 ms)
 
   g_sta->ip_to = os_zalloc(sizeof(os_timer_t));
   if (g_sta->ip_to == NULL) {
-    ESP_DET_ERROR("Out of memory allocating os_timer_t\n");
+    ESP_DET_ERROR("out of memory allocating os_timer_t\n");
     return;
   }
 
@@ -257,11 +256,11 @@ ip_to_stop()
 static void ICACHE_FLASH_ATTR
 ip_to_cb()
 {
-  ESP_DET_DEBUG("Running ip_to_cb in stage %d\n", g_sta->stage);
+  ESP_DET_DEBUG("running ip_to_cb in stage %d\n", g_sta->stage);
 
   ip_to_stop();
   cfg_reset();
-  trigger_main(true, ESP_DET_FAST_CALL);
+  esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_FAST_CALL, NULL);
 }
 
 /**
@@ -275,24 +274,25 @@ ip_got_cb(const char *event, void *arg)
 {
   UNUSED(event);
   UNUSED(arg);
-  ESP_DET_DEBUG("Running ip_got_cb in stage %d.\n", g_sta->stage);
+  ESP_DET_DEBUG("running ip_got_cb in stage %d\n", g_sta->stage);
 
   ip_to_stop();
   g_sta->connected = true;
 
   if (g_sta->stage == ESP_DET_ST_CN) {
     cfg_set_stage(ESP_DET_ST_OP);
-    trigger_main(false, ESP_DET_FAST_CALL);
+    esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_FAST_CALL, NULL);
     return;
   }
 
   if (g_sta->stage == ESP_DET_ST_OP) {
-    trigger_main(false, ESP_DET_FAST_CALL);
+    esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_FAST_CALL, NULL);
     return;
   }
 
-  ESP_DET_ERROR("Run ip_got_cb in unexpected stage %d.\n", g_sta->stage);
-  trigger_main(true, ESP_DET_SLOW_CALL);
+  ESP_DET_ERROR("run ip_got_cb in unexpected stage %d\n", g_sta->stage);
+  cfg_reset();
+  esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -340,7 +340,7 @@ create_ap()
   os_memset(ap_name, 0, ESP_DET_AP_NAME_MAX);
   os_sprintf(ap_name, "%s_%02X%02X%02X%02X%02X%02X", g_sta->ap_prefix, MAC2STR(mac_address));
 
-  ESP_DET_DEBUG("Creating access point '%s/%s'\n", ap_name, g_sta->ap_pass);
+  ESP_DET_DEBUG("creating access point '%s/%s'\n", ap_name, g_sta->ap_pass);
 
   // Make sure we are in correct opmode.
   if (wifi_get_opmode() != STATIONAP_MODE) {
@@ -413,7 +413,7 @@ cfg_load()
 
   // Check if we get what we expected.
   if (g_cfg->magic != ESP_DET_CFG_MAGIC) {
-    ESP_DET_ERROR("error validating config - resetting config.\n");
+    ESP_DET_ERROR("error validating config - resetting config\n");
     return ESP_DET_ERR_CFG_LOAD;
   }
 
@@ -466,7 +466,7 @@ cfg_set(
   strlcpy((char *) station_config.ssid, ap_name, 32);
   strlcpy((char *) station_config.password, ap_pass, 64);
 
-  ESP_DET_DEBUG("Setting access point config: '%s/%s'\n", station_config.ssid, station_config.password);
+  ESP_DET_DEBUG("setting access point config: '%s/%s'\n", station_config.ssid, station_config.password);
 
   ETS_UART_INTR_DISABLE();
   bool success = wifi_station_set_config(&station_config);
@@ -546,19 +546,19 @@ disc_e_cb(const char *event, void *arg)
   UNUSED(event);
   uint32_t reason = (uint32_t) arg;
 
-  ESP_DET_DEBUG("Running disc_e_cb in stage %d reason %d.\n", g_sta->stage, reason);
+  ESP_DET_DEBUG("running disc_e_cb in stage %d reason %d\n", g_sta->stage, reason);
   g_sta->connected = false;
 
   if (g_sta->stage == ESP_DET_ST_DM) return;
 
   if (g_sta->stage == ESP_DET_ST_CN) {
-    trigger_main(false, ESP_DET_FAST_CALL);
+    esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_FAST_CALL, NULL);
     return;
   }
 
   if (g_sta->disc_cb && g_sta->stage == ESP_DET_ST_OP) g_sta->disc_cb();
   cfg_set_stage(ESP_DET_ST_CN);
-  trigger_main(false, ESP_DET_FAST_CALL);
+  esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_FAST_CALL, NULL);
 }
 
 /** Go into detect me stage */
@@ -567,13 +567,13 @@ stage_detect_me()
 {
   esp_det_err err;
 
-  ESP_DET_DEBUG("Running stage_detect_me in stage %d.\n", g_sta->stage);
+  ESP_DET_DEBUG("running stage_detect_me in stage %d\n", g_sta->stage);
 
   // Check back off.
   g_sta->dm_err_cnt += 1;
   if (g_sta->dm_err_cnt >= 10) {
     cfg_reset();
-    trigger_main(true, ESP_DET_SLOW_CALL);
+    esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
     return;
   }
 
@@ -582,15 +582,15 @@ stage_detect_me()
   // Create access point.
   err = create_ap();
   if (err != ESP_DET_OK) {
-    trigger_main(false, ESP_DET_SLOW_CALL);
+    esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
     return;
   }
 
   // Start command server.
   sint8 cmd_err = esp_cmd_start(ESP_DET_CMD_PORT, ESP_DET_CMD_MAX, &cmd_handle_cb);
   if (cmd_err != ESPCONN_OK && cmd_err != ESP_CMD_ERR_ALREADY_STARTED) {
-    ESP_DET_ERROR("Starting command server failed with error code %d.\n", cmd_err);
-    trigger_main(false, ESP_DET_SLOW_CALL);
+    ESP_DET_ERROR("starting command server failed with error code %d\n", cmd_err);
+    esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
     return;
   }
 }
@@ -599,19 +599,19 @@ stage_detect_me()
 static void ICACHE_FLASH_ATTR
 stage_connect()
 {
-  ESP_DET_DEBUG("Running stage_connect in stage %d.\n", g_sta->stage);
+  ESP_DET_DEBUG("running stage_connect in stage %d\n", g_sta->stage);
 
   g_sta->cn_err_cnt += 1;
   if (g_sta->cn_err_cnt >= 10) {
     cfg_reset();
-    trigger_main(true, ESP_DET_SLOW_CALL);
+    esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
     return;
   }
 
   // Connect to access point and wait for IP for 15 seconds.
   if (wifi_station_connect() == false) {
-    ESP_DET_ERROR("Calling wifi_station_connect failed.\n");
-    trigger_main(false, ESP_DET_SLOW_CALL);
+    ESP_DET_ERROR("calling wifi_station_connect failed\n");
+    esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
     return;
   }
   ip_to_start(15000);
@@ -621,7 +621,7 @@ stage_connect()
 static void ICACHE_FLASH_ATTR
 stage_operational()
 {
-  ESP_DET_DEBUG("Running stage_operational in stage %d.\n", g_sta->stage);
+  ESP_DET_DEBUG("running stage_operational in stage %d\n", g_sta->stage);
 
   if (g_sta->dm_run) {
     ESP_DET_DEBUG("Will restart...\n");
@@ -632,21 +632,6 @@ stage_operational()
 
   wifi_set_opmode(STATION_MODE);
   esp_eb_trigger(ESP_DET_EV_USER, NULL);
-}
-
-/**
- * Trigger main event handler.
- *
- * @param reset_cfg Set to true to reset flash stored configuration.
- * @param delay     The delay in milliseconds.
- */
-static void ICACHE_FLASH_ATTR
-trigger_main(bool reset_cfg, uint32_t delay)
-{
-  ESP_DET_DEBUG("Triggering main with delay %d.\n", delay);
-
-  if (reset_cfg) cfg_reset();
-  esp_eb_trigger_delayed(ESP_DET_EV_MAIN, delay, NULL);
 }
 
 /**
@@ -663,7 +648,7 @@ main_e_cb(const char *event, void *arg)
 {
   UNUSED(event);
   UNUSED(arg);
-  ESP_DET_DEBUG("Running main_e_cb in stage %d.\n", g_sta->stage);
+  ESP_DET_DEBUG("running main_e_cb in stage %d\n", g_sta->stage);
 
   if (g_sta->stage == ESP_DET_ST_DM) {
     stage_detect_me();
@@ -676,7 +661,7 @@ main_e_cb(const char *event, void *arg)
       stage_connect();
     }
   } else {
-    ESP_DET_ERROR("Unexpected stage %d. Resetting config.\n", g_sta->stage);
+    ESP_DET_ERROR("unexpected stage %d - resetting config\n", g_sta->stage);
     cfg_reset();
     esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
   }
@@ -696,11 +681,11 @@ wifi_event_cb(System_Event_t *event)
 
   switch (event->event) {
     case EVENT_STAMODE_CONNECTED:
-      ESP_DET_DEBUG("Wifi event: EVENT_STAMODE_CONNECTED\n");
+      ESP_DET_DEBUG("wifi event: EVENT_STAMODE_CONNECTED\n");
       break;
 
     case EVENT_STAMODE_DISCONNECTED:
-      ESP_DET_DEBUG("Wifi event: EVENT_STAMODE_DISCONNECTED reason %d\n",
+      ESP_DET_DEBUG("wifi event: EVENT_STAMODE_DISCONNECTED reason %d\n",
                     event->event_info.disconnected.reason);
 
       esp_eb_trigger(ESP_DET_EV_DISC,
@@ -708,13 +693,13 @@ wifi_event_cb(System_Event_t *event)
       break;
 
     case EVENT_STAMODE_AUTHMODE_CHANGE:
-      ESP_DET_DEBUG("Wifi event: EVENT_STAMODE_AUTHMODE_CHANGE %d -> %d\n",
+      ESP_DET_DEBUG("wifi event: EVENT_STAMODE_AUTHMODE_CHANGE %d -> %d\n",
                     event->event_info.auth_change.old_mode,
                     event->event_info.auth_change.new_mode);
       break;
 
     case EVENT_STAMODE_GOT_IP:
-      ESP_DET_DEBUG("Got IP: %d.%d.%d.%d / %d.%d.%d.%d\n",
+      ESP_DET_DEBUG("got IP %d.%d.%d.%d / %d.%d.%d.%d\n",
                     IP2STR(&(event->event_info.got_ip.ip)),
                     IP2STR(&(event->event_info.got_ip.mask)));
 
@@ -722,19 +707,19 @@ wifi_event_cb(System_Event_t *event)
       break;
 
     case EVENT_STAMODE_DHCP_TIMEOUT:
-      ESP_DET_DEBUG("Wifi event: EVENT_STAMODE_DHCP_TIMEOUT\n");
+      ESP_DET_DEBUG("wifi event: EVENT_STAMODE_DHCP_TIMEOUT\n");
       break;
 
     case EVENT_SOFTAPMODE_STACONNECTED:
-      ESP_DET_DEBUG("Wifi event: EVENT_SOFTAPMODE_STACONNECTED\n");
+      ESP_DET_DEBUG("wifi event: EVENT_SOFTAPMODE_STACONNECTED\n");
       break;
 
     case EVENT_SOFTAPMODE_STADISCONNECTED:
-      ESP_DET_DEBUG("Wifi event: EVENT_SOFTAPMODE_STADISCONNECTED\n");
+      ESP_DET_DEBUG("wifi event: EVENT_SOFTAPMODE_STADISCONNECTED\n");
       break;
 
     case EVENT_OPMODE_CHANGED:
-      ESP_DET_DEBUG("Wifi event: EVENT_OPMODE_CHANGED %d\n", wifi_get_opmode());
+      ESP_DET_DEBUG("wifi event: EVENT_OPMODE_CHANGED %d\n", wifi_get_opmode());
       break;
 
     case EVENT_SOFTAPMODE_PROBEREQRECVED:
@@ -742,7 +727,7 @@ wifi_event_cb(System_Event_t *event)
       break;
 
     default:
-      ESP_DET_DEBUG("Unexpected wifi event: %d\n", event->event);
+      ESP_DET_DEBUG("unexpected wifi event: %d\n", event->event);
       break;
   }
 }
@@ -972,7 +957,9 @@ cmd_handle_cb(uint8_t *res, uint16 res_len, const uint8_t *req, uint16_t req_len
   }
 
   resp_len = cmd_resp(res, res_len, json_resp);
-  if (cJSON_GetObjectItem(json_resp, "success")->type == cJSON_True) trigger_main(false, 250);
+  if (cJSON_GetObjectItem(json_resp, "success")->type == cJSON_True) {
+    esp_eb_trigger_delayed(ESP_DET_EV_MAIN, 250, NULL);
+  }
 
   cJSON_Delete(cmd_json);
   cJSON_Delete(json_resp);
