@@ -340,6 +340,10 @@ create_ap()
     }
   }
 
+  if (wifi_softap_dhcps_stop() != true) {
+    return ESP_DET_ERR_DHCP_STOP;
+  }
+
   struct softap_config ap_conf_curr;
   if (!wifi_softap_get_config(&ap_conf_curr)) {
     return ESP_DET_ERR_WIFI_CFG_GET;
@@ -437,8 +441,6 @@ cfg_set(
   strlcpy((char *) station_config.ssid, ap_name, 32);
   strlcpy((char *) station_config.password, ap_pass, 64);
 
-  ESP_DET_DEBUG("setting access point config: '%s/%s'\n", station_config.ssid, station_config.password);
-
   ETS_UART_INTR_DISABLE();
   bool success = wifi_station_set_config(&station_config);
   ETS_UART_INTR_ENABLE();
@@ -446,6 +448,7 @@ cfg_set(
 
   if (esp_cfg_write(ESP_DET_CFG_IDX) != ESP_CFG_OK) return ESP_DET_ERR_CFG_WRITE;
 
+  ESP_DET_DEBUG("config set: '%s/%s'\n", station_config.ssid, station_config.password);
   return ESP_DET_OK;
 }
 
@@ -550,11 +553,11 @@ stage_detect_me()
   ESP_DET_DEBUG("wifi_station_set_auto_connect: %d\n", success);
   success = wifi_station_dhcpc_start();
   ESP_DET_DEBUG("wifi_station_dhcpc_start: %d\n", success);
-  success = wifi_softap_dhcps_stop();
-  ESP_DET_DEBUG("wifi_softap_dhcps_stop: %d\n", success);
 
   // Create access point.
-  if (create_ap() != ESP_DET_OK) {
+  esp_det_err err;
+  if ((err = create_ap()) != ESP_DET_OK) {
+    ESP_DET_ERROR("error %d creating access point\n", err);
     esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
     return;
   }
@@ -562,7 +565,7 @@ stage_detect_me()
   // Start command server.
   sint8 cmd_err = esp_cmd_start(ESP_DET_CMD_PORT, ESP_DET_CMD_MAX, &cmd_handle_cb);
   if (cmd_err != ESPCONN_OK && cmd_err != ESP_CMD_ERR_ALREADY_STARTED) {
-    ESP_DET_ERROR("starting command server failed with error code %d\n", cmd_err);
+    ESP_DET_ERROR("error %d starting command server\n", cmd_err);
     esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
     return;
   }

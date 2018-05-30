@@ -63,25 +63,25 @@
 
 // The ESP detect error codes.
 typedef enum {
-  ESP_DET_OK,                // No error (success).
-  ESP_DET_ERR_MEM,           // Out of memory.
-  ESP_DET_ERR_INITIALIZED,   // Already initialized.
-  ESP_DET_ERR_OPMODE,        // Error setting opmode.
-  ESP_DET_ERR_WIFI_CFG_GET,  // Error getting WiFi configuration.
-  ESP_DET_ERR_WIFI_CFG_SET,  // Error setting WiFi configuration.
-  ESP_DET_ERR_DHCP_STOP,
-  ESP_DET_ERR_DHCP_START,
-  ESP_DET_ERR_DHCP_OPT,
-  ESP_DET_ERR_IP_INFO_GET,   // Error getting IP configuration.
-  ESP_DET_ERR_IP_INFO_SET,   // Error setting IP configuration.
-  ESP_DET_ERR_CMD_BAD_JSON,  // Bad JSON format (can't parse).
-  ESP_DET_ERR_CMD_MISSING,   // Missing cmd JSON key.
-  ESP_DET_ERR_UNKNOWN_CMD,   // Unknown JSON command.
-  ESP_DET_ERR_VALIDATION,    // JSON validation error.
-  ESP_DET_ERR_AP_CFG,        // Error configuring access point.
-  ESP_DET_ERR_CFG_WRITE,     // Error writing config.
-  ESP_DET_ERR_CFG_INIT,      // Error initializing flash configuration.
-  ESP_DET_ERR_CFG_LOAD,      // Error loading flash configuration.
+  ESP_DET_OK,                // (0) No error (success).
+  ESP_DET_ERR_MEM,           // (1) Out of memory.
+  ESP_DET_ERR_INITIALIZED,   // (2) Already initialized.
+  ESP_DET_ERR_OPMODE,        // (3) Error setting opmode.
+  ESP_DET_ERR_WIFI_CFG_GET,  // (4) Error getting WiFi configuration.
+  ESP_DET_ERR_WIFI_CFG_SET,  // (5) Error setting WiFi configuration.
+  ESP_DET_ERR_DHCP_STOP,     // (6)
+  ESP_DET_ERR_DHCP_START,    // (7)
+  ESP_DET_ERR_DHCP_OPT,      // (8)
+  ESP_DET_ERR_IP_INFO_GET,   // (9) Error getting IP configuration.
+  ESP_DET_ERR_IP_INFO_SET,   // (10) Error setting IP configuration.
+  ESP_DET_ERR_CMD_BAD_JSON,  // (11) Bad JSON format (can't parse).
+  ESP_DET_ERR_CMD_MISSING,   // (12) Missing cmd JSON key.
+  ESP_DET_ERR_UNKNOWN_CMD,   // (13) Unknown JSON command.
+  ESP_DET_ERR_VALIDATION,    // (14) JSON validation error.
+  ESP_DET_ERR_AP_CFG,        // (15) Error configuring access point.
+  ESP_DET_ERR_CFG_WRITE,     // (16) Error writing config.
+  ESP_DET_ERR_CFG_INIT,      // (17) Error initializing flash configuration.
+  ESP_DET_ERR_CFG_LOAD,      // (18) Error loading flash configuration.
 } esp_det_err;
 
 // Structure describing MQTT broker connection.
