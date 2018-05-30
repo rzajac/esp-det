@@ -79,7 +79,9 @@ typedef enum {
   ESP_DET_ERR_UNKNOWN_CMD,   // Unknown JSON command.
   ESP_DET_ERR_VALIDATION,    // JSON validation error.
   ESP_DET_ERR_AP_CFG,        // Error configuring access point.
-  ESP_DET_ERR_CFG_SET,
+  ESP_DET_ERR_CFG_WRITE,     // Error writing config.
+  ESP_DET_ERR_CFG_INIT,      // Error initializing flash configuration.
+  ESP_DET_ERR_CFG_LOAD,      // Error loading flash configuration.
 } esp_det_err;
 
 // Structure describing MQTT broker connection.

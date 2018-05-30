@@ -38,14 +38,16 @@
 #define ESP_DET_SLOW_CALL 500
 
 // The ESP detection stages.
-typedef enum {
+typedef enum
+{
   ESP_DET_ST_DM = 1, // Detect Me stage.
   ESP_DET_ST_CN,     // Connecting to access point.
   ESP_DET_ST_OP      // Operational stage.
 } esp_det_st;
 
 // The ESP detection flash stored configuration.
-typedef struct STORE_ATTR {
+typedef struct STORE_ATTR
+{
   uint8_t magic;      // The magic number indicating the config version.
   uint32_t load_cnt;  // The number of times config was loaded from flash.
   uint32_t mqtt_ip;   // The MQTT broker IP.
@@ -58,7 +60,8 @@ typedef struct STORE_ATTR {
 } flash_cfg;
 
 // The ESP detection global state.
-typedef struct {
+typedef struct
+{
   bool connected;     // Set to true if we are connected to access point.
   bool dm_run;        // Was detect me stage running.
   bool restarting;    // Restarting.
@@ -85,44 +88,158 @@ static det_state *g_sta;
 // Declarations                                                              //
 ///////////////////////////////////////////////////////////////////////////////
 
+static void ICACHE_FLASH_ATTR ip_to_start(uint32 ms);
+
+static void ICACHE_FLASH_ATTR ip_to_stop();
+
+static void ICACHE_FLASH_ATTR ip_to_cb();
+
+static void ICACHE_FLASH_ATTR ip_got_cb(const char *event, void *arg);
+
+
 static void ICACHE_FLASH_ATTR trigger_main(bool reset_cfg, uint32_t delay);
 
-static esp_cfg_err ICACHE_FLASH_ATTR cfg_load();
+static void ICACHE_FLASH_ATTR main_e_cb(const char *event, void *arg);
 
-static esp_cfg_err ICACHE_FLASH_ATTR cfg_reset();
+static void ICACHE_FLASH_ATTR wifi_event_cb(System_Event_t *event);
 
-static esp_cfg_err ICACHE_FLASH_ATTR cfg_set_stage(esp_det_st stage);
+static void ICACHE_FLASH_ATTR init();
+
+static esp_det_err ICACHE_FLASH_ATTR cfg_load();
+
+static esp_det_err ICACHE_FLASH_ATTR cfg_reset();
+
+static esp_det_err ICACHE_FLASH_ATTR cfg_set_stage(esp_det_st stage);
 
 static uint32_t ICACHE_FLASH_ATTR flash_real_size(void);
 
-static bool ICACHE_FLASH_ATTR ap_config_equal(struct softap_config *c1, struct softap_config *c2);
+static bool ICACHE_FLASH_ATTR ap_config_equal(struct softap_config *c1,
+                                              struct softap_config *c2);
 
-/**
- * Handle command callback.
- *
- * @param res      Pointer to response buffer.
- * @param res_len  The response buffer length.
- * @param req      The client command.
- * @param req_len  The client command length.
- *
- * @return Returns response length.
- */
+static void ICACHE_FLASH_ATTR disc_e_cb(const char *event, void *arg);
+
+static void ICACHE_FLASH_ATTR call_user_cb(const char *event, void *arg);
+
 static uint16 ICACHE_FLASH_ATTR cmd_handle_cb(uint8_t *res,
                                               uint16 res_len,
                                               const uint8_t *req,
                                               uint16_t req_len);
 
 ///////////////////////////////////////////////////////////////////////////////
+// External interface.                                                       //
+///////////////////////////////////////////////////////////////////////////////
+
+esp_det_err ICACHE_FLASH_ATTR
+esp_det_start(char *ap_prefix,
+              char *ap_pass,
+              uint8_t ap_cn,
+              esp_det_done_cb *done_cb,
+              esp_det_disconnect *disc_cb,
+              esp_det_enc_dec *encrypt,
+              esp_det_enc_dec *decrypt)
+{
+  // Guards against multiple calls to esp_det_start.
+  if (g_sta != NULL) return ESP_DET_ERR_INITIALIZED;
+
+  // Allocate memory for global structures.
+  g_sta = os_zalloc(sizeof(det_state));
+  if (g_sta == NULL) {
+    return ESP_DET_ERR_MEM;
+  }
+
+  // Load configuration from flash or reset config to default values on error.
+  if (cfg_load() != ESP_DET_OK) {
+    ESP_DET_ERROR("Resetting config.\n");
+    cfg_reset();
+    return ESP_DET_ERR_CFG_LOAD;
+  }
+
+  // Set detection state struct.
+  g_sta->done_cb = done_cb;
+  g_sta->disc_cb = disc_cb;
+
+  // TODO: simplify this and set noop functions if NULL passed.
+  g_sta->encrypt_cb = encrypt;
+  g_sta->decrypt_cb = decrypt;
+  g_sta->ap_cn = ap_cn;
+  g_sta->stage = g_cfg->stage;
+  g_sta->connected = false;
+  strlcpy(g_sta->ap_prefix, ap_prefix, ESP_DET_AP_NAME_PREFIX_MAX);
+  strlcpy(g_sta->ap_pass, ap_pass, ESP_DET_AP_PASS_MAX);
+
+  init();
+
+  // Attach event handlers.
+  wifi_set_event_handler_cb(wifi_event_cb);
+  esp_eb_attach(ESP_DET_EV_MAIN, main_e_cb);
+  esp_eb_attach(ESP_DET_EV_GOT_IP, ip_got_cb);
+  esp_eb_attach(ESP_DET_EV_DISC, disc_e_cb);
+  esp_eb_attach(ESP_DET_EV_USER, call_user_cb);
+
+  // Kick off the detection process.
+  esp_eb_trigger(ESP_DET_EV_MAIN, NULL);
+
+  return ESP_DET_OK;
+}
+
+void ICACHE_FLASH_ATTR
+esp_det_reset()
+{
+  init();
+  trigger_main(true, ESP_DET_FAST_CALL);
+}
+
+void ICACHE_FLASH_ATTR
+esp_det_get_mqtt(esp_det_mqtt *srv)
+{
+  srv->ip = g_cfg->mqtt_ip;
+  srv->port = g_cfg->mqtt_port;
+  strlcpy(srv->user, g_cfg->mqtt_user, ESP_DET_MQTT_USER_MAX);
+  strlcpy(srv->pass, g_cfg->mqtt_pass, ESP_DET_MQTT_PASS_MAX);
+}
+
+uint32_t ICACHE_FLASH_ATTR
+get_start_cnt()
+{
+  return g_cfg->load_cnt;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // IP related functions                                                      //
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- * Stop get IP time out.
+ * Start timeout countdown for getting the IP address.
  *
- * It also releases g_sta->ip_to memory.
+ * Starts timer (if not already started) which calls callback after
+ * given number of milliseconds.
+ *
+ * @param ms The timeout for getting IP address.
  */
 static void ICACHE_FLASH_ATTR
-get_ip_to_stop()
+ip_to_start(uint32 ms)
+{
+  if (g_sta->ip_to == NULL) {
+    return;
+  }
+
+  g_sta->ip_to = os_zalloc(sizeof(os_timer_t));
+  if (g_sta->ip_to == NULL) {
+    ESP_DET_ERROR("Out of memory allocating os_timer_t\n");
+    return;
+  }
+
+  os_timer_setfn(g_sta->ip_to, (os_timer_func_t *) ip_to_cb, NULL);
+  os_timer_arm(g_sta->ip_to, ms, false);
+}
+
+/**
+ * Stop timeout counter for getting the IP address.
+ *
+ * It releases memory pointed by g_sta->ip_to.
+ */
+static void ICACHE_FLASH_ATTR
+ip_to_stop()
 {
   if (g_sta->ip_to == NULL) return;
 
@@ -132,35 +249,35 @@ get_ip_to_stop()
 }
 
 /**
- * Getting IP address timeout callback.
+ * Trigger IP not received callback.
  *
- * Called when we don't get IP address from access point
- * within given timeout.
+ * Called when no IP is assigned by the access point within
+ * timeout passed to ip_to_start.
  */
 static void ICACHE_FLASH_ATTR
-get_ip_to_cb()
+ip_to_cb()
 {
-  ESP_DET_DEBUG("Running get_ip_to_cb in stage %d\n", g_sta->stage);
+  ESP_DET_DEBUG("Running ip_to_cb in stage %d\n", g_sta->stage);
 
-  get_ip_to_stop();
+  ip_to_stop();
   cfg_reset();
   trigger_main(true, ESP_DET_FAST_CALL);
 }
 
 /**
- * Got IP address from access point callback.
+ * Callback function when IP address was assigned by access point.
  *
  * @param event The event name.
  * @param arg   The event argument.
  */
 static void ICACHE_FLASH_ATTR
-got_ip_e_cb(const char *event, void *arg)
+ip_got_cb(const char *event, void *arg)
 {
   UNUSED(event);
   UNUSED(arg);
-  ESP_DET_DEBUG("Running got_ip_e_cb in stage %d.\n", g_sta->stage);
+  ESP_DET_DEBUG("Running ip_got_cb in stage %d.\n", g_sta->stage);
 
-  get_ip_to_stop();
+  ip_to_stop();
   g_sta->connected = true;
 
   if (g_sta->stage == ESP_DET_ST_CN) {
@@ -174,7 +291,7 @@ got_ip_e_cb(const char *event, void *arg)
     return;
   }
 
-  ESP_DET_ERROR("Run got_ip_e_cb in unexpected stage %d.\n", g_sta->stage);
+  ESP_DET_ERROR("Run ip_got_cb in unexpected stage %d.\n", g_sta->stage);
   trigger_main(true, ESP_DET_SLOW_CALL);
 }
 
@@ -185,19 +302,26 @@ got_ip_e_cb(const char *event, void *arg)
 /**
  * Call user provided callback.
  *
+ * It releases memory pointed by g_sta and detaches event buss callbacks.
+ *
  * @param event The event name.
  * @param arg   The data passed to the event.
  */
 static void ICACHE_FLASH_ATTR
-done_e_cb(const char *event, void *arg)
+call_user_cb(const char *event, void *arg)
 {
   UNUSED(event);
   esp_det_done_cb *cb = g_sta->done_cb;
-  get_ip_to_stop();
+  ip_to_stop();
+
+  esp_eb_detach(ESP_DET_EV_MAIN, main_e_cb);
+  esp_eb_detach(ESP_DET_EV_GOT_IP, ip_got_cb);
+  esp_eb_detach(ESP_DET_EV_DISC, disc_e_cb);
+  esp_eb_detach(ESP_DET_EV_USER, call_user_cb);
+
   os_free(g_sta);
   cb((esp_det_err) ((uint32_t) arg));
 }
-
 
 /**
  * Create access point.
@@ -270,27 +394,39 @@ create_ap()
  *
  * @return The error code.
  */
-static esp_cfg_err ICACHE_FLASH_ATTR
+static esp_det_err ICACHE_FLASH_ATTR
 cfg_load()
 {
   esp_cfg_err err;
 
   err = esp_cfg_init(ESP_DET_CFG_IDX, g_cfg, sizeof(flash_cfg));
-  if (err != ESP_CFG_OK) return err;
+  if (err != ESP_CFG_OK) {
+    ESP_DET_ERROR("error initializing config (ESP_CFG: %d)\n", err);
+    return ESP_DET_ERR_CFG_INIT;
+  }
 
   err = esp_cfg_read(ESP_DET_CFG_IDX);
-  if (err != ESP_CFG_OK) return err;
+  if (err != ESP_CFG_OK) {
+    ESP_DET_ERROR("error loading config (ESP_CFG: %d)\n", err);
+    return ESP_DET_ERR_CFG_LOAD;
+  }
 
   // Check if we get what we expected.
   if (g_cfg->magic != ESP_DET_CFG_MAGIC) {
-    ESP_DET_ERROR("Error validating flash loaded config. Resetting config.\n");
-    return cfg_reset();
+    ESP_DET_ERROR("error validating config - resetting config.\n");
+    return ESP_DET_ERR_CFG_LOAD;
   }
 
   // Bump load counter and save.
   g_cfg->load_cnt += 1;
 
-  return esp_cfg_write(ESP_DET_CFG_IDX);
+  err = esp_cfg_write(ESP_DET_CFG_IDX);
+  if (err != ESP_CFG_OK) {
+    ESP_DET_ERROR("error writing config (ESP_CFG: %d)\n", err);
+    return ESP_DET_ERR_CFG_WRITE;
+  }
+
+  return ESP_DET_OK;
 }
 
 /**
@@ -338,7 +474,7 @@ cfg_set(
   if (success == false) return ESP_DET_ERR_AP_CFG;
 
   esp_cfg_err err = esp_cfg_write(ESP_DET_CFG_IDX);
-  if (err != ESP_CFG_OK) return ESP_DET_ERR_CFG_SET;
+  if (err != ESP_CFG_OK) return ESP_DET_ERR_CFG_WRITE;
 
   return ESP_DET_OK;
 }
@@ -350,7 +486,7 @@ cfg_set(
  *
  * @return Error code.
  */
-static esp_cfg_err ICACHE_FLASH_ATTR
+static esp_det_err ICACHE_FLASH_ATTR
 cfg_set_stage(esp_det_st stage)
 {
   ESP_DET_DEBUG("Setting stage to %d.\n", stage);
@@ -361,9 +497,15 @@ cfg_set_stage(esp_det_st stage)
   // When changing detection stage we reset the error counters.
   g_sta->dm_err_cnt = 0;
   g_sta->cn_err_cnt = 0;
-  get_ip_to_stop();
+  ip_to_stop();
 
-  return esp_cfg_write(ESP_DET_CFG_IDX);
+  esp_cfg_err err = esp_cfg_write(ESP_DET_CFG_IDX);
+  if (err != ESP_CFG_OK) {
+    ESP_DET_ERROR("error writing config (ESP_CFG: %d)\n", err);
+    return ESP_DET_ERR_CFG_WRITE;
+  }
+
+  return ESP_DET_OK;
 }
 
 /**
@@ -371,9 +513,11 @@ cfg_set_stage(esp_det_st stage)
  *
  * @return The flash operation error code.
  */
-static esp_cfg_err ICACHE_FLASH_ATTR
+static esp_det_err ICACHE_FLASH_ATTR
 cfg_reset()
 {
+  esp_cfg_err err;
+
   os_memset(g_cfg, 0, sizeof(flash_cfg));
   g_cfg->magic = ESP_DET_CFG_MAGIC;
   g_cfg->stage = ESP_DET_ST_DM;
@@ -384,11 +528,16 @@ cfg_reset()
   g_sta->dm_err_cnt = 0;
   g_sta->cn_err_cnt = 0;
   g_sta->stage = ESP_DET_ST_DM;
-  get_ip_to_stop();
+  ip_to_stop();
 
-  return esp_cfg_write(ESP_DET_CFG_IDX);
+  err = esp_cfg_write(ESP_DET_CFG_IDX);
+  if (err != ESP_CFG_OK) {
+    ESP_DET_ERROR("error writing config (ESP_CFG: %d)\n", err);
+    return ESP_DET_ERR_CFG_WRITE;
+  }
+
+  return ESP_DET_OK;
 }
-
 
 /** Disconnect event callback. */
 static void ICACHE_FLASH_ATTR
@@ -459,22 +608,13 @@ stage_connect()
     return;
   }
 
+  // Connect to access point and wait for IP for 15 seconds.
   if (wifi_station_connect() == false) {
     ESP_DET_ERROR("Calling wifi_station_connect failed.\n");
     trigger_main(false, ESP_DET_SLOW_CALL);
     return;
   }
-
-  if (g_sta->ip_to == NULL) {
-    g_sta->ip_to = os_zalloc(sizeof(os_timer_t));
-    if (g_sta->ip_to == NULL) {
-      ESP_DET_ERROR("Out of memory allocating os_timer_t\n");
-      return;
-    }
-    os_timer_setfn(g_sta->ip_to, (os_timer_func_t *) get_ip_to_cb, NULL);
-    // Wait 15 seconds for IP.
-    os_timer_arm(g_sta->ip_to, 15000, false);
-  }
+  ip_to_start(15000);
 }
 
 /** Go into operational stage. */
@@ -634,87 +774,6 @@ init()
   ESP_DET_DEBUG("wifi_softap_dhcps_stop: %d\n", success);
 }
 
-esp_det_err ICACHE_FLASH_ATTR
-esp_det_start(char *ap_prefix,
-              char *ap_pass,
-              uint8_t ap_cn,
-              esp_det_done_cb *done_cb,
-              esp_det_disconnect *disc_cb,
-              esp_det_enc_dec *encrypt,
-              esp_det_enc_dec *decrypt)
-{
-  esp_cfg_err cfg_err;
-
-  // Guards against multiple calls to esp_det_start.
-  if (g_cfg != NULL) return ESP_DET_ERR_INITIALIZED;
-
-  // Allocate memory for global structures.
-  g_sta = os_zalloc(sizeof(det_state));
-  if (g_sta == NULL) {
-    return ESP_DET_ERR_MEM;
-  }
-
-  // Load configuration from flash or reset config to defaul values on error.
-  cfg_err = cfg_load();
-  if (cfg_err != ESP_CFG_OK) {
-    ESP_DET_ERROR("Error %d loading configuration. Resetting config.\n", cfg_err);
-    cfg_err = cfg_reset();
-    if (cfg_err != ESP_CFG_OK) {
-      ESP_DET_ERROR("Error %d resetting config.\n", cfg_err);
-      return ESP_DET_ERR_CFG_SET;
-    }
-  }
-
-  // Set detection state struct.
-  g_sta->done_cb = done_cb;
-  g_sta->disc_cb = disc_cb;
-
-  // TODO: simplify this and set noop functions if NULL passed.
-  g_sta->encrypt_cb = encrypt;
-  g_sta->decrypt_cb = decrypt;
-  g_sta->ap_cn = ap_cn;
-  g_sta->stage = g_cfg->stage;
-  g_sta->connected = false;
-  strlcpy(g_sta->ap_prefix, ap_prefix, ESP_DET_AP_NAME_PREFIX_MAX);
-  strlcpy(g_sta->ap_pass, ap_pass, ESP_DET_AP_PASS_MAX);
-
-  init();
-
-  // Attach event handlers.
-  wifi_set_event_handler_cb(wifi_event_cb);
-  esp_eb_attach(ESP_DET_EV_MAIN, main_e_cb);
-  esp_eb_attach(ESP_DET_EV_GOT_IP, got_ip_e_cb);
-  esp_eb_attach(ESP_DET_EV_DISC, disc_e_cb);
-  esp_eb_attach(ESP_DET_EV_USER, done_e_cb);
-
-  // Kick off the detection process.
-  esp_eb_trigger(ESP_DET_EV_MAIN, NULL);
-
-  return ESP_DET_OK;
-}
-
-void ICACHE_FLASH_ATTR
-esp_det_reset()
-{
-  init();
-  trigger_main(true, ESP_DET_FAST_CALL);
-}
-
-void ICACHE_FLASH_ATTR
-esp_det_get_mqtt(esp_det_mqtt *srv)
-{
-  srv->ip = g_cfg->mqtt_ip;
-  srv->port = g_cfg->mqtt_port;
-  strlcpy(srv->user, g_cfg->mqtt_user, ESP_DET_MQTT_USER_MAX);
-  strlcpy(srv->pass, g_cfg->mqtt_pass, ESP_DET_MQTT_PASS_MAX);
-}
-
-uint32_t ICACHE_FLASH_ATTR
-get_start_cnt()
-{
-  return g_cfg->load_cnt;
-}
-
 static uint16 ICACHE_FLASH_ATTR
 encrypt(uint8_t *dst, const uint8_t *src, uint16 src_len)
 {
@@ -867,6 +926,16 @@ cmd_set_ap(cJSON *cmd)
   return cmd_success_resp();
 }
 
+/**
+ * Handle command callback.
+ *
+ * @param res      Pointer to response buffer.
+ * @param res_len  The response buffer length.
+ * @param req      The client command.
+ * @param req_len  The client command length.
+ *
+ * @return Returns response length.
+ */
 static uint16 ICACHE_FLASH_ATTR
 cmd_handle_cb(uint8_t *res, uint16 res_len, const uint8_t *req, uint16_t req_len)
 {
@@ -879,7 +948,7 @@ cmd_handle_cb(uint8_t *res, uint16 res_len, const uint8_t *req, uint16_t req_len
 
   // We cast because AES can decode in place.
   decrypt(buff, req, req_len);
-  os_printf("Handling cmd: %s %d -> %d\n", buff, req_len, strlen((const char *) buff));
+  ESP_DET_DEBUG("handling cmd: %s\n", buff);
 
   cmd_json = cJSON_Parse((const char *) buff);
   if (cmd_json == NULL) {
