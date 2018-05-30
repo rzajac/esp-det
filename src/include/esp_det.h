@@ -113,6 +113,8 @@ typedef void (esp_det_disconnect)();
  * @param dst     The destination buffer.
  * @param src     The source buffer (to be encrypted or decrypted).
  * @param src_len The length of the source data.
+ *
+ * @return The number of bytes written to dst.
  */
 typedef uint16 (esp_det_enc_dec)(uint8_t *dst, const uint8_t *src, uint16 src_len);
 
@@ -135,7 +137,7 @@ typedef uint16 (esp_det_enc_dec)(uint8_t *dst, const uint8_t *src, uint16 src_le
  * @param encrypt   The encryption callback. May be set to NULL if no encryption is not needed.
  * @param decrypt   The decryption callback. May be set to NULL if no decryption is not needed.
  *
- * @return Error code.
+ * @return The error code.
  */
 esp_det_err ICACHE_FLASH_ATTR
 esp_det_start(char *ap_prefix,

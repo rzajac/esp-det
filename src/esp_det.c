@@ -84,7 +84,7 @@ static det_state *g_sta;
 // Declarations                                                              //
 ///////////////////////////////////////////////////////////////////////////////
 
-static void ICACHE_FLASH_ATTR ip_to_start(uint32 ms);
+static esp_det_err ICACHE_FLASH_ATTR ip_to_start(uint32 ms);
 
 static void ICACHE_FLASH_ATTR ip_to_stop();
 
@@ -212,17 +212,22 @@ esp_det_get_mqtt(esp_det_mqtt *srv)
  * given number of milliseconds.
  *
  * @param ms The timeout for getting IP address.
+ *
+ * @returns The error code.
  */
-static void ICACHE_FLASH_ATTR
+static esp_det_err ICACHE_FLASH_ATTR
 ip_to_start(uint32 ms)
 {
-  if (g_sta->ip_to != NULL) return;
+  // Already started.
+  if (g_sta->ip_to != NULL) return ESP_DET_OK;
 
   g_sta->ip_to = os_zalloc(sizeof(os_timer_t));
-  if (g_sta->ip_to == NULL) return; // TODO: this holds the system.
+  if (g_sta->ip_to == NULL) return ESP_DET_ERR_MEM;
 
   os_timer_setfn(g_sta->ip_to, (os_timer_func_t *) ip_to_cb, NULL);
   os_timer_arm(g_sta->ip_to, ms, false);
+
+  return ESP_DET_OK;
 }
 
 /**
@@ -400,7 +405,7 @@ cfg_load()
  * @param mqtt_pass The MQTT broker password.
  * @param stage The one of ESP_DET_ST_*.
  *
- * @return Error code.
+ * @return The error code.
  */
 static esp_det_err ICACHE_FLASH_ATTR
 cfg_set(
@@ -443,7 +448,7 @@ cfg_set(
  *
  * @param stage The one of ESP_DET_ST_*.
  *
- * @return Error code.
+ * @return The error code.
  */
 static esp_det_err ICACHE_FLASH_ATTR
 cfg_set_stage(esp_det_st stage)
@@ -469,7 +474,7 @@ cfg_set_stage(esp_det_st stage)
 /**
  * Reset ESP configuration and write it to flash.
  *
- * @return The flash operation error code.
+ * @return The error code.
  */
 static esp_det_err ICACHE_FLASH_ATTR
 cfg_reset()
@@ -581,6 +586,12 @@ stage_connect()
     ESP_DET_ERROR("calling wifi_station_connect failed\n");
     esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
     return;
+  }
+
+  if (ip_to_start(15000) != ESP_DET_OK) {
+    ESP_DET_ERROR("error starting IP timeout counter\n");
+    cfg_reset();
+    esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
   }
 }
 
