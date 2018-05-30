@@ -64,8 +64,8 @@ sys_init_done()
   esp_det_enc_dec *encrypt_fn = NULL;
   esp_det_enc_dec *decrypt_fn = NULL;
 
-  encrypt_fn = encrypt;
-  decrypt_fn = decrypt;
+  encrypt_fn = encrypt_noop;
+  decrypt_fn = decrypt_noop;
 
   esp_det_err err = esp_det_start("AGENT",
                                   "password",

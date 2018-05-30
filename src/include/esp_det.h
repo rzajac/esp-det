@@ -51,9 +51,9 @@
 #define ESP_DET_AP_NAME_PREFIX_MAX 6
 // The maximum detection access point password length.
 #define ESP_DET_AP_PASS_MAX 20
-// The maximum main server username length.
+// The MQTT broker maximum username length.
 #define ESP_DET_MQTT_USER_MAX 10
-// The maximum main server password length.
+// The MQTT broker maximum password length.
 #define ESP_DET_MQTT_PASS_MAX 10
 // The port to start command server on.
 // Also used as a port for UDP broadcast messages in ESP_DET_ST_DS detection stage.
@@ -86,10 +86,10 @@ typedef enum {
 
 // Structure describing MQTT broker connection.
 typedef struct {
-  uint32_t ip;   // The main server IP.
-  uint16_t port; // The main server port.
-  char user[ESP_DET_MQTT_USER_MAX]; // The main server username.
-  char pass[ESP_DET_MQTT_PASS_MAX]; // The main server password.
+  uint32_t ip;                      // The MQTT broker IP.
+  uint16_t port;                    // The MQTT broker port.
+  char user[ESP_DET_MQTT_USER_MAX]; // The MQTT broker username.
+  char pass[ESP_DET_MQTT_PASS_MAX]; // The MQTT broker password.
 } esp_det_mqtt;
 
 /**
@@ -146,14 +146,18 @@ esp_det_start(char *ap_prefix,
               esp_det_enc_dec *encrypt,
               esp_det_enc_dec *decrypt);
 
-/** Reset ESP detect library and start over. */
+/**
+ * Stop ESP detection process.
+ *
+ * It releases memory pointed by g_sta and detaches event buss callbacks.
+ */
 void ICACHE_FLASH_ATTR
-esp_det_reset();
+esp_det_stop();
 
 /**
  * Get MQTT broker connection details.
  *
- * @param srv The main server connection details structure.
+ * @param srv The structure to set values on.
  */
 void ICACHE_FLASH_ATTR
 esp_det_get_mqtt(esp_det_mqtt *srv);
@@ -164,6 +168,6 @@ esp_det_get_mqtt(esp_det_mqtt *srv);
  * @return Start count.
  */
 uint32_t ICACHE_FLASH_ATTR
-get_start_cnt();
+esp_det_start_cnt();
 
 #endif //ESP_DET_H

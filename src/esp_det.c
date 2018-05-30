@@ -38,16 +38,14 @@
 #define ESP_DET_SLOW_CALL 500
 
 // The ESP detection stages.
-typedef enum
-{
+typedef enum {
   ESP_DET_ST_DM = 1, // Detect Me stage.
   ESP_DET_ST_CN,     // Connecting to access point.
   ESP_DET_ST_OP      // Operational stage.
 } esp_det_st;
 
 // The ESP detection flash stored configuration.
-typedef struct STORE_ATTR
-{
+typedef struct STORE_ATTR {
   uint8_t magic;      // The magic number indicating the config version.
   uint32_t load_cnt;  // The number of times config was loaded from flash.
   uint32_t mqtt_ip;   // The MQTT broker IP.
@@ -60,8 +58,7 @@ typedef struct STORE_ATTR
 } flash_cfg;
 
 // The ESP detection global state.
-typedef struct
-{
+typedef struct {
   bool connected;     // Set to true if we are connected to access point.
   bool dm_run;        // Was detect me stage running.
   bool restarting;    // Restarting.
@@ -96,12 +93,9 @@ static void ICACHE_FLASH_ATTR ip_to_cb();
 
 static void ICACHE_FLASH_ATTR ip_got_cb(const char *event, void *arg);
 
-
 static void ICACHE_FLASH_ATTR main_e_cb(const char *event, void *arg);
 
 static void ICACHE_FLASH_ATTR wifi_event_cb(System_Event_t *event);
-
-static void ICACHE_FLASH_ATTR init();
 
 static esp_det_err ICACHE_FLASH_ATTR cfg_load();
 
@@ -122,6 +116,14 @@ static uint16 ICACHE_FLASH_ATTR cmd_handle_cb(uint8_t *res,
                                               uint16 res_len,
                                               const uint8_t *req,
                                               uint16_t req_len);
+
+static uint16 ICACHE_FLASH_ATTR encrypt_noop(uint8_t *dst,
+                                             const uint8_t *src,
+                                             uint16 src_len);
+
+static uint16 ICACHE_FLASH_ATTR decrypt_noop(uint8_t *dst,
+                                             const uint8_t *src,
+                                             uint16 src_len);
 
 ///////////////////////////////////////////////////////////////////////////////
 // External interface.                                                       //
@@ -148,24 +150,22 @@ esp_det_start(char *ap_prefix,
   // Load configuration from flash or reset config to default values on error.
   if (cfg_load() != ESP_DET_OK) {
     ESP_DET_ERROR("resetting config\n");
-    cfg_reset();
-    return ESP_DET_ERR_CFG_LOAD;
+    if (cfg_reset() != ESP_DET_OK) {
+      return ESP_DET_ERR_CFG_LOAD;
+    }
   }
 
   // Set detection state struct.
   g_sta->done_cb = done_cb;
   g_sta->disc_cb = disc_cb;
 
-  // TODO: simplify this and set noop functions if NULL passed.
-  g_sta->encrypt_cb = encrypt;
-  g_sta->decrypt_cb = decrypt;
+  g_sta->encrypt_cb = encrypt == NULL ? encrypt_noop : encrypt;
+  g_sta->decrypt_cb = decrypt == NULL ? decrypt_noop : decrypt;
   g_sta->ap_cn = ap_cn;
   g_sta->stage = g_cfg->stage;
   g_sta->connected = false;
   strlcpy(g_sta->ap_prefix, ap_prefix, ESP_DET_AP_NAME_PREFIX_MAX);
   strlcpy(g_sta->ap_pass, ap_pass, ESP_DET_AP_PASS_MAX);
-
-  init();
 
   // Attach event handlers.
   wifi_set_event_handler_cb(wifi_event_cb);
@@ -181,11 +181,17 @@ esp_det_start(char *ap_prefix,
 }
 
 void ICACHE_FLASH_ATTR
-esp_det_reset()
+esp_det_stop()
 {
-  init();
-  cfg_reset();
-  esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_FAST_CALL, NULL);
+  ip_to_stop();
+  wifi_set_event_handler_cb(NULL);
+
+  esp_eb_detach(ESP_DET_EV_MAIN, main_e_cb);
+  esp_eb_detach(ESP_DET_EV_GOT_IP, ip_got_cb);
+  esp_eb_detach(ESP_DET_EV_DISC, disc_e_cb);
+  esp_eb_detach(ESP_DET_EV_USER, call_user_cb);
+
+  os_free(g_sta);
 }
 
 void ICACHE_FLASH_ATTR
@@ -198,7 +204,7 @@ esp_det_get_mqtt(esp_det_mqtt *srv)
 }
 
 uint32_t ICACHE_FLASH_ATTR
-get_start_cnt()
+esp_det_start_cnt()
 {
   return g_cfg->load_cnt;
 }
@@ -302,8 +308,6 @@ ip_got_cb(const char *event, void *arg)
 /**
  * Call user provided callback.
  *
- * It releases memory pointed by g_sta and detaches event buss callbacks.
- *
  * @param event The event name.
  * @param arg   The data passed to the event.
  */
@@ -312,14 +316,7 @@ call_user_cb(const char *event, void *arg)
 {
   UNUSED(event);
   esp_det_done_cb *cb = g_sta->done_cb;
-  ip_to_stop();
-
-  esp_eb_detach(ESP_DET_EV_MAIN, main_e_cb);
-  esp_eb_detach(ESP_DET_EV_GOT_IP, ip_got_cb);
-  esp_eb_detach(ESP_DET_EV_DISC, disc_e_cb);
-  esp_eb_detach(ESP_DET_EV_USER, call_user_cb);
-
-  os_free(g_sta);
+  esp_det_stop();
   cb((esp_det_err) ((uint32_t) arg));
 }
 
@@ -362,7 +359,7 @@ create_ap()
   ap_conf.ssid_len = (uint8) os_strlen(ap_name);
   ap_conf.authmode = AUTH_WPA_PSK;
   ap_conf.channel = g_sta->ap_cn;
-  ap_conf.max_connection = 1; // How many stations can connect to ESP8266 softAP at most.
+  ap_conf.max_connection = 1; // How many stations can connect to access point.
 
   if (ap_config_equal(&ap_conf_curr, &ap_conf) == false) {
     ETS_UART_INTR_DISABLE();
@@ -579,6 +576,16 @@ stage_detect_me()
 
   g_sta->dm_run = true;
 
+  bool success;
+  success = wifi_station_set_reconnect_policy(false);
+  ESP_DET_DEBUG("wifi_station_set_reconnect_policy: %d\n", success);
+  success = wifi_station_set_auto_connect(false);
+  ESP_DET_DEBUG("wifi_station_set_auto_connect: %d\n", success);
+  success = wifi_station_dhcpc_start();
+  ESP_DET_DEBUG("wifi_station_dhcpc_start: %d\n", success);
+  success = wifi_softap_dhcps_stop();
+  ESP_DET_DEBUG("wifi_softap_dhcps_stop: %d\n", success);
+
   // Create access point.
   err = create_ap();
   if (err != ESP_DET_OK) {
@@ -732,53 +739,18 @@ wifi_event_cb(System_Event_t *event)
   }
 }
 
-/**
- * Initialize ESP8266 to the known state.
- *
- * - Set current mode to station + AP.
- * - Turn off reconnect policy.
- * - Turn off auto connect policy.
- * - Turn off station DHCP server.
- * - Turn off AP DHCP policy.
- */
-static void ICACHE_FLASH_ATTR
-init()
+static uint16 ICACHE_FLASH_ATTR
+encrypt_noop(uint8_t *dst, const uint8_t *src, uint16 src_len)
 {
-  bool success;
-
-  // We must always start with known state.
-  success = wifi_set_opmode_current(STATIONAP_MODE);
-  ESP_DET_DEBUG("wifi_set_opmode_current: %d\n", success);
-  success = wifi_station_set_reconnect_policy(false);
-  ESP_DET_DEBUG("wifi_station_set_reconnect_policy: %d\n", success);
-  success = wifi_station_set_auto_connect(false);
-  ESP_DET_DEBUG("wifi_station_set_auto_connect: %d\n", success);
-  success = wifi_station_dhcpc_start();
-  ESP_DET_DEBUG("wifi_station_dhcpc_start: %d\n", success);
-  success = wifi_softap_dhcps_stop();
-  ESP_DET_DEBUG("wifi_softap_dhcps_stop: %d\n", success);
+  os_memmove(dst, src, src_len);
+  return src_len;
 }
 
 static uint16 ICACHE_FLASH_ATTR
-encrypt(uint8_t *dst, const uint8_t *src, uint16 src_len)
+decrypt_noop(uint8_t *dst, const uint8_t *src, uint16 src_len)
 {
-  if (g_sta->encrypt_cb == NULL) {
-    os_memmove(dst, src, src_len);
-    return src_len;
-  } else {
-    return g_sta->encrypt_cb(dst, src, src_len);
-  }
-}
-
-static uint16 ICACHE_FLASH_ATTR
-decrypt(uint8_t *dst, const uint8_t *src, uint16 src_len)
-{
-  if (g_sta->decrypt_cb == NULL) {
-    os_memmove(dst, src, src_len);
-    return src_len;
-  } else {
-    return g_sta->decrypt_cb(dst, src, src_len);
-  }
+  os_memmove(dst, src, src_len);
+  return src_len;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -842,7 +814,7 @@ cmd_resp(uint8_t *dst, uint16 dst_len, cJSON *resp)
   char *resp_str = cJSON_PrintUnformatted(resp);
   if (resp_str != NULL) {
     os_printf("sending: %s -> %d\n", resp_str, strlen(resp_str));
-    resp_len = encrypt(dst, (const uint8_t *) resp_str, (uint16) strlen(resp_str));
+    resp_len = g_sta->encrypt_cb(dst, (const uint8_t *) resp_str, (uint16) strlen(resp_str));
     os_free(resp_str);
   }
 
@@ -932,7 +904,7 @@ cmd_handle_cb(uint8_t *res, uint16 res_len, const uint8_t *req, uint16_t req_len
   if (buff == NULL) return 0; // No more memory.
 
   // We cast because AES can decode in place.
-  decrypt(buff, req, req_len);
+  g_sta->decrypt_cb(buff, req, req_len);
   ESP_DET_DEBUG("handling cmd: %s\n", buff);
 
   cmd_json = cJSON_Parse((const char *) buff);
