@@ -30,9 +30,6 @@
 // User callback event name.
 #define ESP_DET_EV_USER "espDetUser"
 
-// Supported commands.
-#define ESP_DET_CMD_SET_AP "cfg"
-
 // Delay in ms for calling mine function.
 #define ESP_DET_FAST_CALL 10
 #define ESP_DET_SLOW_CALL 500
@@ -329,7 +326,10 @@ create_ap()
   // Build access point name.
   wifi_get_macaddr(STATION_IF, mac_address);
   os_memset(ap_name, 0, ESP_DET_AP_NAME_MAX);
-  os_sprintf(ap_name, "%s_%02X%02X%02X%02X%02X%02X", g_sta->ap_prefix, MAC2STR(mac_address));
+  os_sprintf(ap_name,
+             "%s_%02X%02X%02X%02X%02X%02X",
+             g_sta->ap_prefix,
+             MAC2STR(mac_address));
 
   ESP_DET_DEBUG("creating access point '%s/%s'\n", ap_name, g_sta->ap_pass);
 
@@ -353,11 +353,14 @@ create_ap()
   os_memset(ap_conf.ssid, 0, 32);
   os_memset(ap_conf.password, 0, 64);
   os_memcpy(ap_conf.ssid, ap_name, (unsigned int) os_strlen(ap_name));
-  os_memcpy(ap_conf.password, g_sta->ap_pass, (unsigned int) os_strlen(g_sta->ap_pass));
+  os_memcpy(ap_conf.password,
+            g_sta->ap_pass,
+            (unsigned int) os_strlen(g_sta->ap_pass));
   ap_conf.ssid_len = (uint8) os_strlen(ap_name);
   ap_conf.authmode = AUTH_WPA_PSK;
   ap_conf.channel = g_sta->ap_cn;
-  ap_conf.max_connection = 1; // How many stations can connect to access point.
+  // Maximum number of stations that can connect to access point.
+  ap_conf.max_connection = 1;
 
   if (ap_config_equal(&ap_conf_curr, &ap_conf) == false) {
     ETS_UART_INTR_DISABLE();
@@ -397,7 +400,8 @@ cfg_load()
   }
 
   // Check if we get what we expected.
-  if (esp_cfg_read(ESP_DET_CFG_IDX) != ESP_CFG_OK || g_cfg->magic != ESP_DET_CFG_MAGIC) {
+  if (esp_cfg_read(ESP_DET_CFG_IDX) != ESP_CFG_OK ||
+      g_cfg->magic != ESP_DET_CFG_MAGIC) {
     return ESP_DET_ERR_CFG_LOAD;
   }
 
@@ -427,8 +431,6 @@ cfg_set(
     char *mqtt_pass,
     esp_det_st stage)
 {
-  struct station_config station_config;
-
   strlcpy(g_cfg->ap_name, ap_name, ESP_DET_AP_NAME_MAX);
   strlcpy(g_cfg->ap_pass, ap_pass, ESP_DET_AP_NAME_MAX);
   g_cfg->mqtt_ip = mqtt_ip;
@@ -438,18 +440,21 @@ cfg_set(
   g_cfg->stage = stage;
   g_sta->stage = stage;
 
-  os_memset(&station_config, 0, sizeof(struct station_config));
-  strlcpy((char *) station_config.ssid, ap_name, 32);
-  strlcpy((char *) station_config.password, ap_pass, 64);
+  struct station_config sta_cfg;
+  os_memset(&sta_cfg, 0, sizeof(struct station_config));
+  strlcpy((char *) sta_cfg.ssid, ap_name, 32);
+  strlcpy((char *) sta_cfg.password, ap_pass, 64);
 
   ETS_UART_INTR_DISABLE();
-  bool success = wifi_station_set_config(&station_config);
+  bool success = wifi_station_set_config(&sta_cfg);
   ETS_UART_INTR_ENABLE();
   if (success == false) return ESP_DET_ERR_AP_CFG;
 
-  if (esp_cfg_write(ESP_DET_CFG_IDX) != ESP_CFG_OK) return ESP_DET_ERR_CFG_WRITE;
+  if (esp_cfg_write(ESP_DET_CFG_IDX) != ESP_CFG_OK) {
+    return ESP_DET_ERR_CFG_WRITE;
+  }
 
-  ESP_DET_DEBUG("config set: '%s/%s'\n", station_config.ssid, station_config.password);
+  ESP_DET_DEBUG("config set: '%s/%s'\n", sta_cfg.ssid, sta_cfg.password);
   return ESP_DET_OK;
 }
 
@@ -518,7 +523,7 @@ disc_e_cb(const char *event, void *arg)
   uint32_t reason = (uint32_t) arg;
 
   g_sta->connected = false;
-  ESP_DET_DEBUG("running disc_e_cb in stage %d reason %d\n", g_sta->stage, reason);
+  ESP_DET_DEBUG("disc_e_cb in stage %d reason %d\n", g_sta->stage, reason);
 
   if (g_sta->stage == ESP_DET_ST_DM) return;
 
@@ -535,7 +540,7 @@ disc_e_cb(const char *event, void *arg)
 
 /** Go into detect me stage */
 static void ICACHE_FLASH_ATTR
-stage_detect_me()
+stage_detect()
 {
   // Check back off.
   g_sta->dm_err_cnt += 1;
@@ -564,7 +569,9 @@ stage_detect_me()
   }
 
   // Start command server.
-  sint8 cmd_err = esp_cmd_start(ESP_DET_CMD_PORT, ESP_DET_CMD_MAX, &cmd_handle_cb);
+  sint8 cmd_err = esp_cmd_start(ESP_DET_CMD_PORT, ESP_DET_CMD_MAX,
+                                &cmd_handle_cb);
+
   if (cmd_err != ESPCONN_OK && cmd_err != ESP_CMD_ERR_ALREADY_STARTED) {
     ESP_DET_ERROR("error %d starting command server\n", cmd_err);
     esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
@@ -576,7 +583,7 @@ stage_detect_me()
 static void ICACHE_FLASH_ATTR
 stage_connect()
 {
-  ESP_DET_DEBUG("running stage_connect (%d)\n", g_sta->stage);
+  ESP_DET_DEBUG("stage_connect (%d)\n", g_sta->stage);
 
   g_sta->cn_err_cnt += 1;
   if (g_sta->cn_err_cnt >= 10) {
@@ -609,7 +616,7 @@ stage_connect()
 static void ICACHE_FLASH_ATTR
 stage_operational()
 {
-  ESP_DET_DEBUG("running stage_operational (%d)\n", g_sta->stage);
+  ESP_DET_DEBUG("stage_operational (%d)\n", g_sta->stage);
 
   if (g_sta->dm_run) {
     ESP_DET_DEBUG("restarting...\n");
@@ -635,10 +642,10 @@ main_e_cb(const char *event, void *arg)
 {
   UNUSED(event);
   UNUSED(arg);
-  ESP_DET_DEBUG("running main_e_cb in stage %d\n", g_sta->stage);
+  ESP_DET_DEBUG("main_e_cb in stage %d\n", g_sta->stage);
 
   if (g_sta->stage == ESP_DET_ST_DM) {
-    stage_detect_me();
+    stage_detect();
   } else if (g_sta->stage == ESP_DET_ST_CN) {
     stage_connect();
   } else if (g_sta->stage == ESP_DET_ST_OP) {
@@ -794,7 +801,9 @@ cmd_resp(uint8_t *dst, uint16 dst_len, cJSON *resp)
   char *resp_str = cJSON_PrintUnformatted(resp);
   if (resp_str != NULL) {
     os_printf("sending: %s -> %d\n", resp_str, strlen(resp_str));
-    resp_len = g_sta->encrypt_cb(dst, (const uint8_t *) resp_str, (uint16) strlen(resp_str));
+    resp_len = g_sta->encrypt_cb(dst,
+                                 (const uint8_t *) resp_str,
+                                 (uint16) strlen(resp_str));
     os_free(resp_str);
   }
 
@@ -874,7 +883,10 @@ cmd_set_ap(cJSON *cmd)
  * @return Returns response length.
  */
 static uint16 ICACHE_FLASH_ATTR
-cmd_handle_cb(uint8_t *res, uint16 res_len, const uint8_t *req, uint16_t req_len)
+cmd_handle_cb(uint8_t *res,
+              uint16 res_len,
+              const uint8_t *req,
+              uint16_t req_len)
 {
   uint16 resp_len = 0;
   cJSON *cmd_json = NULL;
@@ -889,14 +901,16 @@ cmd_handle_cb(uint8_t *res, uint16 res_len, const uint8_t *req, uint16_t req_len
 
   cmd_json = cJSON_Parse((const char *) buff);
   if (cmd_json == NULL) {
-    json_resp = cmd_valid_err_resp("could not decode json", ESP_DET_ERR_CMD_BAD_JSON);
+    json_resp = cmd_valid_err_resp("could not decode json",
+                                   ESP_DET_ERR_CMD_BAD_JSON);
     os_free(buff);
     return cmd_resp(res, res_len, json_resp);
   }
 
   cJSON *det_cmd = cJSON_GetObjectItem(cmd_json, "cmd");
   if (det_cmd == NULL) {
-    json_resp = cmd_valid_err_resp("bad command format", ESP_DET_ERR_CMD_MISSING);
+    json_resp = cmd_valid_err_resp("bad command format",
+                                   ESP_DET_ERR_CMD_MISSING);
     cJSON_Delete(cmd_json);
     os_free(buff);
     return cmd_resp(res, res_len, json_resp);
@@ -905,7 +919,8 @@ cmd_handle_cb(uint8_t *res, uint16 res_len, const uint8_t *req, uint16_t req_len
   if (strcmp(det_cmd->valuestring, ESP_DET_CMD_SET_AP) == 0) {
     json_resp = cmd_set_ap(cmd_json);
   } else {
-    json_resp = cmd_valid_err_resp("unknown command", ESP_DET_ERR_UNKNOWN_CMD);
+    json_resp = cmd_valid_err_resp("unknown command",
+                                   ESP_DET_ERR_UNKNOWN_CMD);
   }
 
   resp_len = cmd_resp(res, res_len, json_resp);
@@ -938,7 +953,9 @@ ap_config_equal(struct softap_config *c1, struct softap_config *c2)
     return false;
   }
 
-  if (os_strncmp((const char *) c1->password, (const char *) c2->password, 64) != 0) {
+  if (os_strncmp((const char *) c1->password,
+                 (const char *) c2->password,
+                 64) != 0) {
     return false;
   }
 

@@ -14,6 +14,7 @@
  * under the License.
  */
 
+
 #ifndef ESP_DET_H
 #define ESP_DET_H
 
@@ -61,18 +62,21 @@
 // Maximum number of TCP connections to allow for command server.
 #define ESP_DET_CMD_MAX 2
 
+// Supported TCP commands.
+#define ESP_DET_CMD_SET_AP "cfg"
+
 // The ESP detect error codes.
 typedef enum {
-  ESP_DET_OK,                // (0) No error (success).
-  ESP_DET_ERR_MEM,           // (1) Out of memory.
-  ESP_DET_ERR_INITIALIZED,   // (2) Already initialized.
-  ESP_DET_ERR_OPMODE,        // (3) Error setting opmode.
-  ESP_DET_ERR_WIFI_CFG_GET,  // (4) Error getting WiFi configuration.
-  ESP_DET_ERR_WIFI_CFG_SET,  // (5) Error setting WiFi configuration.
-  ESP_DET_ERR_DHCP_STOP,     // (6)
-  ESP_DET_ERR_DHCP_START,    // (7)
-  ESP_DET_ERR_DHCP_OPT,      // (8)
-  ESP_DET_ERR_IP_INFO_GET,   // (9) Error getting IP configuration.
+  ESP_DET_OK,                //  (0) No error (success).
+  ESP_DET_ERR_MEM,           //  (1) Out of memory.
+  ESP_DET_ERR_INITIALIZED,   //  (2) Already initialized.
+  ESP_DET_ERR_OPMODE,        //  (3) Error setting opmode.
+  ESP_DET_ERR_WIFI_CFG_GET,  //  (4) Error getting WiFi configuration.
+  ESP_DET_ERR_WIFI_CFG_SET,  //  (5) Error setting WiFi configuration.
+  ESP_DET_ERR_DHCP_STOP,     //  (6) Error stopping DHCP server.
+  ESP_DET_ERR_DHCP_START,    //  (7)
+  ESP_DET_ERR_DHCP_OPT,      //  (8)
+  ESP_DET_ERR_IP_INFO_GET,   //  (9) Error getting IP configuration.
   ESP_DET_ERR_IP_INFO_SET,   // (10) Error setting IP configuration.
   ESP_DET_ERR_CMD_BAD_JSON,  // (11) Bad JSON format (can't parse).
   ESP_DET_ERR_CMD_MISSING,   // (12) Missing cmd JSON key.

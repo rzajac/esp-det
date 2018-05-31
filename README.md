@@ -1,77 +1,91 @@
-## The ESP8266 detection library.
+## The ESP8266 detection and configuration library.
 
-The library helps detect and configure new ESP8266 devices on a network. 
+The purpose of this library is to manage initial detection and configuration of 
+a device through the wifi network. The configuration process is managed 
+internally and passed back to the main program when the device is configured and 
+connected to access point. It happens on every boot.
 
-The ESP8266 library for storing custom data structures on flash to keep it between resets / reboots.
-Depending on your configuration, linker script and data size you may have to customize 
-`ESP_CFG_START_SECTOR` in `esp_config.h` file. By default it is set 
-to sector `0xC` (one sector is 4096 bytes) which is located before user app (`0x10000`).  
+The process of configuration is divided into three stages:
 
-The detection and configuration has following stages:
+1. Detect - create access point and wait for configuration.
+2. Connect - connect to access point configured in stage 1.
+3. Operational - callback to user program and monitor access point connection.
 
-1. **Detect Me** - ESP creates password protected access point with name `IOT_XXXXXXXXXXXX` 
-(`XXXXXXXXXXXX` is the MAC address of the device) and starts TCP server listening on port 7802 for  
-commands. In this stage device waits to be detected by a **Manager Service** which should
-continuously scan WiFi access points in range for a specific pattern, connect and send 
-access point connection information. When it happens and ESP is able to connect to 
-provided access point the detection moves to stage 2 or 3. 
+The current device stage and configuration is kept on the flash memory and 
+recalled on every boot. The library also implements recovery logic for cases:
 
-2. **Detect Main Server** - If your use case requires ESP to know the IP address, 
-port, username, password of a server to communicate with you may ask to get to this 
-stage right after stage 1. It is optional though. In this stage ESP also starts TCP 
-server on port 7802 but it also sends UDP broadcasts on the same port. Manager Service 
-should intercept them and send Main Server configuration by connection to TCP port 7802.
-The Manager Service has around 10 seconds to send the info back. When ESP does not 
-receive the info on time it goes back to stage 1. 
-Later main server connection info is available through library public API. 
-In this stage ESP sends UDP broadcasts so Manager Service can respond with the 
-Main Server configuration.
+- Access point cannot be joined - go to detect stage.
+- Access point connection / reconnection. After 10 failed retries switch to 
+  detect stage.
+- Configuration read failure - reset config and go to detect stage.
 
-3. **Operational** - All necessary information is provided and the control is passed to 
-user program.
+Basically the idea is to delegate ESP detection and configuration to this 
+library on every boot and wait in user program for a callback when device is 
+configured and connected to WiFi. 
 
-The idea is to delegate ESP detection and configuration to the library on every boot and
-wait for a callback when ESP has all configuration and is connected. Library constantly manages
-the WiFi connection. If it breaks it goes through the stages till it recovers the configuration
-and connection.  
+If at any point in time the network connection breaks user program is 
+notified by a callback and library goes through the stages till it 
+recovers the configuration and connection at which point it calls back the 
+user program again.
 
-Check the example Manager Service at https://github.com/rzajac/iotdet.
+## Stages details.
 
-## Manager Service
+#### Detect.
 
-Both ESP and Manager Service must share the access credentials.
+Library creates password protected access point with name `PREXIX_XXXXXXXXXXXX` 
+and starts TCP server listening on port 7802 for commands (see below). 
+In this stage device waits to be detected and configured by an external program 
+like [HHQ](https://github.com/rzajac/hhq) which continuously scans for WiFi 
+access points in range for a specific pattern, connects to them and sends 
+the necessary configuration commands.     
 
-The Manager Service after detecting the new ESP access point should connect to it and send
-through TCP access point configuration. Example request:
+The `PREFIX` in access point name is configurable and `XXXXXXXXXXXX` is always 
+the MAC address of the device.
+
+#### Connect.
+
+Connect to access point configured in detect stage. If the connection fails 
+library will reset the config and go back to detect stage.
+ 
+#### Operational.
+
+All necessary information is provided and the control is passed to user program.
+ 
+## Command server.
+
+The TCP command server started in detect stage expects configuration command 
+in JSON format to be send by a client. The configuration command must be 
+in the following format:
 
 ```json
-{"cmd": "setAp", "name": "MyAccessPoint", "pass": "secret"}
-``` 
-
-if everything goes well ESP should respond with:
-
-```json
-{"success":true,"code":0,"msg":"configuration set"}
+{
+  "cmd":"cfg",
+  "ap_name":"IoTAccessPoint",
+  "ap_pass":"secret",
+  "mqtt_ip":"192.168.11.127",
+  "mqtt_port":1883,
+  "mqtt_user":"iot_user",
+  "mqtt_pass":"top secret"
+}
 ```
 
-If we configured library to detect Main Server the ESP will start sending broadcasts 
-after connection to provided access point:
+In the response client will receive either success message:
 
 ```json
-{"cmd":"espDiscovery","mac":"XXXXXXXXXXXX"}
-``` 
-
-When Manager Service receives the broadcast it should to source IP address on port 7802 and send
-Main Server configuration:
-
-```json
-{"cmd": "setSrv", "ip": "192.168.1.149", "port": 1883,  "user": "username", "pass": "secret"}
+{"success":true, "ic":"ESP2866", "memory":1048576}
 ```
 
-The Main Server configuration is not validated in any way by the library. It simply stores it
-on the flash and provides it to the user program through API. 
+or error message:
 
-See (example)[example/main.c] program for usage.
+```json
+{"success":false, "code":14, "msg": "missing mqtt_port key"}
+```
+
+The error codes can be found in [esp_det.h](src/include/esp_det.h)
+
+## Usage.
+
+See [example](example/main.c) program for usage.
 
 ## Build environment.
 
@@ -87,13 +101,6 @@ $ cmake ..
 $ make esp_det_ex_flash
 $ miniterm.py /dev/ttyUSB0 74880
 ```
-
-## TODO
-
-- ~~Encrypt communication with AES.~~  
-- Send device type in Main Server detection broadcast.
-- Library sets internal callback using wifi_set_event_handler_cb. User program MUST not redefine it. If needed implement
-another callback so both library and user program can listen to wifi events.
 
 ## Integration.
 
