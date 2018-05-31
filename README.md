@@ -1,9 +1,13 @@
 ## The ESP8266 detection and configuration library.
 
 The purpose of this library is to manage initial detection and configuration of 
-a device through the wifi network. The configuration process is managed 
-internally and passed back to the main program when the device is configured and 
-connected to access point. It happens on every boot.
+a device through the WiFi network. The process is managed internally and passed 
+back to the main program when the device is configured and connected to access 
+point. 
+
+On every boot user program should call the library which will go to the stage 
+(see below) it was before the shutdown and release control (via callback) when
+the device is again configured and connected to the network.  
 
 The process of configuration is divided into three stages:
 
@@ -75,7 +79,7 @@ In the response client will receive either success message:
 {"success":true, "ic":"ESP2866", "memory":1048576}
 ```
 
-or error message:
+or error message in format like below:
 
 ```json
 {"success":false, "code":14, "msg": "missing mqtt_port key"}
