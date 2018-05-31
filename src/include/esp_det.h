@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Rafal Zajac <rzajac@gmail.com>.
+ * Copyright 2018 Rafal Zajac <rzajac@gmail.com>.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may
  * not use this file except in compliance with the License. You may obtain
@@ -57,7 +57,6 @@
 // The MQTT broker maximum password length.
 #define ESP_DET_MQTT_PASS_MAX 10
 // The port to start command server on.
-// Also used as a port for UDP broadcast messages in ESP_DET_ST_DS detection stage.
 #define ESP_DET_CMD_PORT 7802
 // Maximum number of TCP connections to allow for command server.
 #define ESP_DET_CMD_MAX 2
@@ -97,17 +96,20 @@ typedef struct {
 } esp_det_mqtt;
 
 /**
- * Function prototype called when device is successfully configured and is connected to WiFi network.
+ * Detection done.
  *
- * @param err When set to something other then 0 it means esp-det got unrecoverable error.
+ * Function prototype called when device is successfully configured
+ * and is connected to WiFi network.
+ *
+ * @param err Unrecoverable error code or ESP_DET_OK on success.
  */
 typedef void (esp_det_done_cb)(esp_det_err err);
 
 /**
  * Function prototype called when device disconnects from WiFi.
  *
- * User program after receives this callback it should stop all network operations and
- * wait for esp_det_done_cb callback to be called.
+ * User program after receives this callback it should stop all
+ * network operations and wait for esp_det_done_cb callback to be called.
  */
 typedef void (esp_det_disconnect)();
 
@@ -120,7 +122,9 @@ typedef void (esp_det_disconnect)();
  *
  * @return The number of bytes written to dst.
  */
-typedef uint16 (esp_det_enc_dec)(uint8_t *dst, const uint8_t *src, uint16 src_len);
+typedef uint16 (esp_det_enc_dec)(uint8_t *dst,
+                                 const uint8_t *src,
+                                 uint16 src_len);
 
 /**
  * Start the detection procedure.
@@ -135,11 +139,18 @@ typedef uint16 (esp_det_enc_dec)(uint8_t *dst, const uint8_t *src, uint16 src_le
  * @param ap_prefix The access point name prefix.
  * @param ap_pass   The password for detection access point.
  * @param ap_cn     The channel to use for detection access point.
- * @param done_cb   The user program callback. ESP8266 configured and connected to WiFi network.
- * @param disc_cb   Notify user program that we are no longer connected to wifi. When connection is restored
- *                  done_cb will ba called again.
- * @param encrypt   The encryption callback. May be set to NULL if no encryption is not needed.
- * @param decrypt   The decryption callback. May be set to NULL if no decryption is not needed.
+ *
+ * @param done_cb   The user program callback. ESP8266 configured and
+ *                  connected to WiFi network.
+ *
+ * @param disc_cb   Notify user program that we are no longer connected to wifi.
+ *                  When connection is restored done_cb will ba called again.
+ *
+ * @param encrypt   The encryption callback. May be set to NULL if no
+ *                  encryption is not needed.
+ *
+ * @param decrypt   The decryption callback. May be set to NULL if no
+ *                  decryption is not needed.
  *
  * @return The error code.
  */
