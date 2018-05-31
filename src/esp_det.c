@@ -23,10 +23,6 @@
 
 // Trigger user callback event name.
 #define ESP_DET_EV_MAIN "espDetMain"
-// Received IP from access point event name.
-#define ESP_DET_EV_GOT_IP "espDetIp"
-// Access point disconnection event name.
-#define ESP_DET_EV_DISC "espDetDisc"
 // User callback event name.
 #define ESP_DET_EV_USER "espDetUser"
 
@@ -90,8 +86,6 @@ static void ICACHE_FLASH_ATTR ip_to_cb();
 static void ICACHE_FLASH_ATTR ip_got_cb(const char *event, void *arg);
 
 static void ICACHE_FLASH_ATTR main_e_cb(const char *event, void *arg);
-
-static void ICACHE_FLASH_ATTR wifi_event_cb(System_Event_t *event);
 
 static esp_det_err ICACHE_FLASH_ATTR cfg_load();
 
@@ -169,11 +163,13 @@ esp_det_start(char *ap_prefix,
   strlcpy(g_sta->ap_pass, ap_pass, ESP_DET_AP_PASS_MAX);
 
   // Attach event handlers.
-  wifi_set_event_handler_cb(wifi_event_cb);
   esp_eb_attach(ESP_DET_EV_MAIN, main_e_cb);
-  esp_eb_attach(ESP_DET_EV_GOT_IP, ip_got_cb);
-  esp_eb_attach(ESP_DET_EV_DISC, disc_e_cb);
   esp_eb_attach(ESP_DET_EV_USER, call_user_cb);
+
+  esp_eb_attach(ESP_EB_EVENT_STAMODE_DISCONNECTED, disc_e_cb);
+  esp_eb_attach(ESP_EB_EVENT_STAMODE_GOT_IP, ip_got_cb);
+
+  esp_eb_handle_wifi_events();
 
   // Kick off the detection process.
   esp_eb_trigger(ESP_DET_EV_MAIN, NULL);
@@ -188,9 +184,10 @@ esp_det_stop()
   wifi_set_event_handler_cb(NULL);
 
   esp_eb_detach(ESP_DET_EV_MAIN, main_e_cb);
-  esp_eb_detach(ESP_DET_EV_GOT_IP, ip_got_cb);
-  esp_eb_detach(ESP_DET_EV_DISC, disc_e_cb);
   esp_eb_detach(ESP_DET_EV_USER, call_user_cb);
+
+  esp_eb_detach(ESP_EB_EVENT_STAMODE_DISCONNECTED, disc_e_cb);
+  esp_eb_detach(ESP_EB_EVENT_STAMODE_GOT_IP, ip_got_cb);
 
   os_free(g_sta);
 }
@@ -274,6 +271,10 @@ ip_got_cb(const char *event, void *arg)
 {
   UNUSED(event);
   UNUSED(arg);
+
+  if (g_sta->restarting == true) {
+    return;
+  }
 
   ip_to_stop();
   g_sta->connected = true;
@@ -520,10 +521,17 @@ static void ICACHE_FLASH_ATTR
 disc_e_cb(const char *event, void *arg)
 {
   UNUSED(event);
-  uint32_t reason = (uint32_t) arg;
+
+  if (g_sta->restarting == true) {
+    return;
+  }
+
+  System_Event_t *se = (System_Event_t *) arg;
 
   g_sta->connected = false;
-  ESP_DET_DEBUG("disc_e_cb in stage %d reason %d\n", g_sta->stage, reason);
+  ESP_DET_DEBUG("disc_e_cb in stage %d reason %d\n",
+                g_sta->stage,
+                se->event_info.disconnected.reason);
 
   if (g_sta->stage == ESP_DET_ST_DM) return;
 
@@ -658,71 +666,6 @@ main_e_cb(const char *event, void *arg)
     ESP_DET_ERROR("unexpected stage %d - resetting config\n", g_sta->stage);
     cfg_reset();
     esp_eb_trigger_delayed(ESP_DET_EV_MAIN, ESP_DET_SLOW_CALL, NULL);
-  }
-}
-
-/**
- * The WiFi events handler.
- *
- * @param event The WiFi event.
- */
-static void ICACHE_FLASH_ATTR
-wifi_event_cb(System_Event_t *event)
-{
-  if (g_sta->restarting == true) {
-    return;
-  }
-
-  switch (event->event) {
-    case EVENT_STAMODE_CONNECTED:
-      ESP_DET_DEBUG("wifi event: EVENT_STAMODE_CONNECTED\n");
-      break;
-
-    case EVENT_STAMODE_DISCONNECTED:
-      ESP_DET_DEBUG("wifi event: EVENT_STAMODE_DISCONNECTED reason %d\n",
-                    event->event_info.disconnected.reason);
-
-      esp_eb_trigger(ESP_DET_EV_DISC,
-                     (void *) ((uint32_t) event->event_info.disconnected.reason));
-      break;
-
-    case EVENT_STAMODE_AUTHMODE_CHANGE:
-      ESP_DET_DEBUG("wifi event: EVENT_STAMODE_AUTHMODE_CHANGE %d -> %d\n",
-                    event->event_info.auth_change.old_mode,
-                    event->event_info.auth_change.new_mode);
-      break;
-
-    case EVENT_STAMODE_GOT_IP:
-      ESP_DET_DEBUG("got IP %d.%d.%d.%d / %d.%d.%d.%d\n",
-                    IP2STR(&(event->event_info.got_ip.ip)),
-                    IP2STR(&(event->event_info.got_ip.mask)));
-
-      esp_eb_trigger(ESP_DET_EV_GOT_IP, NULL);
-      break;
-
-    case EVENT_STAMODE_DHCP_TIMEOUT:
-      ESP_DET_DEBUG("wifi event: EVENT_STAMODE_DHCP_TIMEOUT\n");
-      break;
-
-    case EVENT_SOFTAPMODE_STACONNECTED:
-      ESP_DET_DEBUG("wifi event: EVENT_SOFTAPMODE_STACONNECTED\n");
-      break;
-
-    case EVENT_SOFTAPMODE_STADISCONNECTED:
-      ESP_DET_DEBUG("wifi event: EVENT_SOFTAPMODE_STADISCONNECTED\n");
-      break;
-
-    case EVENT_OPMODE_CHANGED:
-      ESP_DET_DEBUG("wifi event: EVENT_OPMODE_CHANGED %d\n", wifi_get_opmode());
-      break;
-
-    case EVENT_SOFTAPMODE_PROBEREQRECVED:
-      // Ignoring this one.
-      break;
-
-    default:
-      ESP_DET_DEBUG("unexpected wifi event: %d\n", event->event);
-      break;
   }
 }
 
