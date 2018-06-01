@@ -89,7 +89,8 @@ The error codes can be found in [esp_det.h](src/include/esp_det.h)
 
 ## Usage.
 
-See [example](example/main.c) program for usage.
+See [example](example/main.c) program for usage and 
+[esp_det.h](src/include/esp_det.h) for the interface.
 
 ## Build environment.
 

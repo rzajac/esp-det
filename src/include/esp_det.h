@@ -43,7 +43,7 @@
 #define UNUSED(x) ( (void)(x) )
 
 // This must be changed every time flash_cfg structure changes.
-#define ESP_DET_CFG_MAGIC 16
+#define ESP_DET_CFG_MAGIC 17
 // The esp_cfg configuration index to use.
 #define ESP_DET_CFG_IDX 0
 // The maximum detection access point name length.

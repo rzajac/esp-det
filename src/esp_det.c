@@ -144,10 +144,8 @@ esp_det_start(char *ap_prefix,
   }
 
   // Load configuration from flash or reset config to default values on error.
-  if ((cfg_load()) != ESP_DET_OK) {
-    if (cfg_reset() != ESP_DET_OK) {
-      return ESP_DET_ERR_CFG_LOAD;
-    }
+  if ((cfg_load()) != ESP_DET_OK && cfg_reset() != ESP_DET_OK) {
+    return ESP_DET_ERR_CFG_LOAD;
   }
 
   // Set detection state struct.
@@ -560,13 +558,11 @@ stage_detect()
 
   g_sta->dm_run = true;
 
-  bool success;
-  success = wifi_station_set_reconnect_policy(false);
-  ESP_DET_DEBUG("wifi_station_set_reconnect_policy: %d\n", success);
-  success = wifi_station_set_auto_connect(false);
-  ESP_DET_DEBUG("wifi_station_set_auto_connect: %d\n", success);
-  success = wifi_station_dhcpc_start();
-  ESP_DET_DEBUG("wifi_station_dhcpc_start: %d\n", success);
+  ESP_DET_DEBUG("wifi_station_set_reconnect_policy: %d\n",
+                wifi_station_set_reconnect_policy(false));
+  ESP_DET_DEBUG("wifi_station_set_auto_connect: %d\n",
+                wifi_station_set_auto_connect(false));
+  ESP_DET_DEBUG("wifi_station_dhcpc_start: %d\n", wifi_station_dhcpc_start());
 
   // Create access point.
   esp_det_err err;
