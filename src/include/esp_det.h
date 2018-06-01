@@ -40,7 +40,9 @@
 #define ESP_DET_ERROR(format, ...) os_printf("DET ERR: " format, ## __VA_ARGS__ )
 
 // Used for unused arguments.
-#define UNUSED(x) ( (void)(x) )
+#ifndef UNUSED
+  #define UNUSED(x) ( (void)(x) )
+#endif
 
 // This must be changed every time flash_cfg structure changes.
 #define ESP_DET_CFG_MAGIC 17
