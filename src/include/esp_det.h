@@ -179,4 +179,4 @@ esp_det_stop();
 void ICACHE_FLASH_ATTR
 esp_det_get_mqtt(esp_det_mqtt *srv);
 
-#endif //ESP_DET_H
+#endif // ESP_DET_H
